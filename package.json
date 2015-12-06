@@ -12,11 +12,13 @@
     "icebreaker": "^1.0.1",
     "icebreaker-agent-udp": "^1.0.0",
     "icebreaker-peer-net": "^1.0.1",
-    "multiaddr": "^1.0.0",
-    "peer-id": "^0.4.0",
-    "peer-info": "^0.4.0",
+    "is-plain-object": "^2.0.1",
+    "is-string": "^1.0.4",
+    "pull-handshake": "^1.0.4",
     "pull-notify": "0.0.0",
     "pull-stream": "^3.0.0",
-    "ssb-address": "^1.0.1"
+    "secret-handshake": "git://github.com/alligator-io/secret-handshake.git",
+    "ssb-address": "^1.0.1",
+    "ssb-keys": "https://github.com/alligator-io/ssb-keys.git"
   }
 }
