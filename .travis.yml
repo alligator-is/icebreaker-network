@@ -1,4 +1,4 @@
-sudo: false
+sudo: true
 language: cpp
 os:
   - linux
@@ -25,4 +25,4 @@ before_install:
 install:
   - npm install
 script:
-  - npm test
+  - sudo npm test
