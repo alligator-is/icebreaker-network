@@ -1,49 +1,56 @@
-var _ = require('icebreaker')
-var PeerNet = require('icebreaker-peer-net');
-var UDP = require('icebreaker-agent-udp')
-var crypto = require('crypto');
-var Network = require('./lib/network');
-var SecretNetwork = require('./lib/secret');
+var connect = require('./lib/connect');
+var util = require('./lib/util')
+var listen = require('./lib/listen')
+var unixListen = require('./lib/unixListen')
 
-var Discovery = require('./lib/discovery');
+module.exports = {
+  listen: function (s, params) {
+    if (!params) params = {}
+    if (!params.protocols) {
+      params.protocols = {
+        'ws:': require('./lib/ws/listen'),
+        'tcp:': require('./lib/tcp/listen'),
+        'udp:': require('./lib/udp/listen')
+      }
+    }
+    if (!params.unixProtocols) {
+      params.unixProtocols = {
+        'tcp+unix:': require('./lib/tcp/listen'),
+        'ws+unix:': require('./lib/ws/listen')
+      }
+    }
+    params.unixConnectProtocols = {
+      'tcp+unix:': require('./lib/tcp/connect'),
+      'ws+unix:': require('./lib/ws/connect')
+    }
 
-var network = new SecretNetwork({
-  transports: [PeerNet(), UDP({
-    loopback: true
-  })]
-});
+    var url = util.parseUrl(s)
+    if (params.unixProtocols[url.protocol] != null) return unixListen(s, params);
 
-new Discovery(network, {
-  interval: 2000
-});
+    return listen(s, params)
+  },
+  connect: function (s, params, cb) {
+    if (util.isFunction(params) && !cb) {
+      cb = params
+      params = {}
+    }
 
-network.start();
+    if (!params.protocols) {
+      params.protocols = {
+        'tcp:': require('./lib/tcp/connect'),
+        'ws:': require('./lib/ws/connect')
+      }
+    }
 
-_(
-  network.listen(),
-  _.drain(function (t) {
-  }, function () {
-    console.log('end');
+    if (!params.unixProtocols) {
+      params.unixProtocols = {
+        'tcp+unix:': require('./lib/tcp/connect'),
+        'ws+unix:': require('./lib/ws/connect')
+      }
+    }
 
-  }))
-
-
-var network = new SecretNetwork({
-    transports: [PeerNet({port:6554}), UDP({
-    loopback: true
-  })]
-});
-
-new Discovery(network, {
-  interval: 2000
-});
-
-network.start();
-
-_(
-  network.listen(),
-  _.drain(function (t) {
-    console.log(arguments);
-  }, function () {
-    console.log('end');
-  }))
+    return connect(s, params, cb)
+  },
+  combine: require('./lib/combine'),
+  on: require('./lib/on')
+}

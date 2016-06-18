@@ -1,0 +1,8 @@
+/dist/
+/test/
+.*
+bower.json
+/scripts/
+appveyor.yml
+.travis.yml
+.zuul.yml
