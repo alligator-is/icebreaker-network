@@ -6,14 +6,11 @@ var _ = icebreaker
 test('ws:connect',function(t){
 t.plan(2)
 $.get('/port',function(port){
-  console.log(port)
-  network.connect('ws://localhost:'+port,function(connection){
-    console.log('connection')
+  network.connect('wss://echo.websocket.org',function(connection){
     _(
       connection,
       goodbye({source:_('hello'),sink:_.drain(function(d){
-        console.log('data');
-        t.equals(d,'world')
+        t.equals(d,'hello')
       },function(err){
         console.log(err);
         t.notOk(err)

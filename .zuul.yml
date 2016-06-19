@@ -17,7 +17,6 @@ browsers:
 scripts:
   - "https://code.jquery.com/jquery-3.0.0.js",
   - "https://rawgit.com/alligator-io/icebreaker/master/dist/icebreaker.min.js"
-server: ./test/browser/listen.js
 browserify:
   - exclude: icebreaker
   - ignore: ws
