@@ -25,4 +25,4 @@ before_install:
 install:
   - npm install
 script:
-  - sudo npm test
+  - npm test
