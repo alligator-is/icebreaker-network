@@ -9,7 +9,7 @@ var delay = function () {
     return function (err, cb) {
       setTimeout(function () {
         read(null, cb)
-      }, 10)
+      }, 100)
     }
   }
 }

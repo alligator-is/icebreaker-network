@@ -60,7 +60,7 @@ test('tcp ipv6', function (t) {
 var path = require('path')
 test('tcp+unix', function (t) {
   t.plan(4)
-  var l = listen('tcp+unix://'+os.tmpdir()+'/test2.socket')
+  var l = listen('tcp+unix://'+os.tmpdir()+'/test3.socket')
 
   _(l, on({
     ready: function (e) {
