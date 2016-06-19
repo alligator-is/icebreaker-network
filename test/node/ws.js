@@ -3,7 +3,7 @@ var _ = require('icebreaker')
 var listen = require('../../').listen
 var connect = require('../../').connect
 var on = require('../../').on
-
+var os = require('os')
 var delay = function () {
   return function (read) {
     return function (err, cb) {
@@ -72,7 +72,7 @@ test('ws ipv6', function (t) {
 test('ws+unix', function (t) {
   t.plan(4)
 
-  var l = listen('ws+unix://./test.socket')
+  var l = listen('ws+unix://'+os.tmpdir()+'/test.socket')
 
   _(l, on({
     ready: function (e) {
@@ -92,7 +92,7 @@ test('ws+unix', function (t) {
       }), c)
     },
     end: function (err) {
-      t.ok(err == null);
+        t.ok(err == null);
     }
   }))
 })

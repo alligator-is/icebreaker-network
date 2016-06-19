@@ -5,8 +5,8 @@ var combine = network.combine
 var listen = network.listen
 var connect = network.connect
 var on = network.on
-
-var n = combine(listen('tcp://localhost:8082'),listen('udp://0.0.0.0:8081?reuseAddr=true&loopback=true&multicast=239.5.5.5'),listen('tcp+unix://./test.socket'))
+var os = require('os')
+var n = combine(listen('tcp://localhost:8082'),listen('udp://0.0.0.0:8081?reuseAddr=true&loopback=true&multicast=239.5.5.5'),listen('tcp+unix://'+os.tmpdir()+'/test.socket'))
 
 test('combine',function(t){
   t.plan(9)
@@ -39,6 +39,7 @@ test('combine',function(t){
     },
     end: function (err) {
       t.notOk(err)
+      
       t.end()
     }
   }))
