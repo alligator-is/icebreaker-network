@@ -9,12 +9,15 @@ module.exports = {
       params = {}
     }
     if (!params.protocols) params.protocols = {
-        'ws:': require('./lib/ws/connect')
+        'ws:': require('./lib/ws/connect'),
+        'wss:': require('./lib/ws/connect'),
+
     }
     if (!params.unixProtocols) params.unixProtocols = {}
     return connect(s, params, cb)
   }
 }
+
 },{"./lib/connect":2,"./lib/util":3,"./lib/ws/connect":4}],2:[function(require,module,exports){
 var util = require('./util')
 var defaults = require('lodash.defaults')
@@ -45,6 +48,7 @@ module.exports = function connect(s, params,cb) {
     protocol:url.protocol
   }, defaults(params,url.query)),cb)
 }
+
 },{"./util":3,"lodash.defaults":14}],3:[function(require,module,exports){
   var URL = require('url')
   var os = require('os')
@@ -86,7 +90,7 @@ module.exports = function connect(s, params,cb) {
 
       var isWindows = util.isWindows;
       if (url.protocol === 'tcp+unix:' || url.protocol === 'ws+unix:') {
-        if (isWindows) {
+        if (isWindows()) {
           var p = path.parse(url.path).root;
           if (p !== '//./pipe/')
             url.path = path.join('\\\\.\\pipe', url.path);
@@ -96,6 +100,7 @@ module.exports = function connect(s, params,cb) {
       return url
     }
   }
+
 },{"os":5,"path":6,"url":12}],4:[function(require,module,exports){
 var _
 var ws ;
@@ -163,6 +168,7 @@ module.exports = function (params, cb) {
 
   connect();
 }
+
 },{"../util":3,"dns":5,"icebreaker":undefined,"lodash.defaults":14,"lodash.pick":17,"net":5,"pull-ws":20,"url":12,"ws":5}],5:[function(require,module,exports){
 
 },{}],6:[function(require,module,exports){
