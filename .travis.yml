@@ -1,4 +1,4 @@
-sudo: true
+sudo: false
 language: cpp
 os:
   - linux
@@ -24,5 +24,6 @@ before_install:
   - $CXX --version
 install:
   - npm install
+  - npm dedupe
 script:
   - npm test
