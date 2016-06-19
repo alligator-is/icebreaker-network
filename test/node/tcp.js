@@ -3,6 +3,7 @@ var _ = require('icebreaker')
 var listen = require('../../').listen
 var connect = require('../../').connect
 var on = require('../../').on
+var os = require('os')
 
 test('tcp v4', function (t) {
   t.plan(5)
@@ -56,11 +57,11 @@ test('tcp ipv6', function (t) {
     end: t.notOk
   }))
 })
-
+var path = require('path')
 test('tcp+unix', function (t) {
   t.plan(4)
-
-  var l = listen('tcp+unix://./test.socket')
+  console.log('tcp+unix://'+path.join(os.tmpdir(),'test.socket'))
+  var l = listen('tcp+unix://'+os.tmpdir()+'/test.socket')
 
   _(l, on({
     ready: function (e) {
