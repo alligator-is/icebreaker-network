@@ -1,7 +1,11 @@
 ui: tape
 capabilities:
-  recordLogs: true
+  record-video: false
+  record-screenshots: false
 browsers:
+  - name: android
+    version: [4.4,5.0]
+    platform: Linux
   - name: firefox
     version: [37,38]
     platform: Windows 2012 R2
@@ -9,11 +13,18 @@ browsers:
     version: [42,43]
     platform: Windows 2012 R2
   - name: ie
-    version: 9..11
+    version: 11
     platform: Windows 2008
   - name: MicrosoftEdge
     platform: Windows 10
     version: latest
+  - name: safari
+    version: 7..latest
+  - name: ipad
+    version: [7.1,8.1,9.2]
+  - name: opera
+    version: latest
+    platform: Windows 2003
 scripts:
   - "https://rawgit.com/alligator-io/icebreaker/master/dist/icebreaker.min.js"
 browserify:
