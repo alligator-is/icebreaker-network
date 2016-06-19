@@ -1,7 +1,7 @@
 {
   "name": "icebreaker-network",
   "version": "0.1.0",
-  "description": "",
+  "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
     "build": "npm run browserify && npm run dist",
