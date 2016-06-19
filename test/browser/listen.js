@@ -3,7 +3,7 @@ var network = require('../../');
 var l = null;
 console.log('listen on '+process.env.ZUUL_PORT)
 var goodbye = require('pull-goodbye')
-_(l=network.listen('ws://localhost:'+process.env.ZUUL_PORT),network.on({
+_(l=network.listen('ws://0.0.0.0:'+process.env.ZUUL_PORT),network.on({
   ready:function(e){
     console.log('ready',e);
   },
