@@ -38,7 +38,8 @@ module.exports = {
     if (!params.protocols) {
       params.protocols = {
         'tcp:': require('./lib/tcp/connect'),
-        'ws:': require('./lib/ws/connect')
+        'ws:': require('./lib/ws/connect'),
+        'wss:': require('./lib/ws/connect')
       }
     }
 

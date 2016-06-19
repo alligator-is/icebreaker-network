@@ -8,7 +8,9 @@ module.exports = {
       params = {}
     }
     if (!params.protocols) params.protocols = {
-        'ws:': require('./lib/ws/connect')
+        'ws:': require('./lib/ws/connect'),
+        'wss:': require('./lib/ws/connect'),
+
     }
     if (!params.unixProtocols) params.unixProtocols = {}
     return connect(s, params, cb)
