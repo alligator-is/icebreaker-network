@@ -4,13 +4,36 @@ var listen = require('../../').listen
 var connect = require('../../').connect
 var on = require('../../').on
 var os = require('os')
-var delay = function () {
-  return function (read) {
-    return function (err, cb) {
-      setTimeout(function () {
-        read(null, cb)
-      }, 100)
-    }
+var goodbye = require('pull-goodbye')
+
+
+function onConnection(l, t) {
+  return function (c) {
+    _(c, goodbye({
+      source: _('world'),
+      sink: _.drain(function (d) {
+        t.equal(d.toString(), 'hello', 'equal')
+      }, l.end)
+    }, 'GoodBye'), c)
+  }
+}
+
+function onConnect(l, t) {
+  return function (connection) {
+    _(
+      connection,
+      goodbye({
+        source: _('hello'),
+        sink: _.drain(function (d) {
+          t.equal(d.toString(), 'world', 'equals')
+        }, function (err) {
+          t.notOk(err)
+          l.end()
+
+        })
+      }, 'GoodBye'),
+      connection
+    )
   }
 }
 
@@ -22,21 +45,9 @@ test('tcp v4', function (t) {
   _(l, on({
     ready: function (e) {
       t.equal(e.localPort, 8090)
-      connect(e.protocol + '//' + e.localAddress + ':' + e.localPort, function (connection) {
-        _('hello', delay(), connection, _.drain(function (d) {
-          t.equal(d.toString(), 'world', 'equals')
-        }, function (err) {
-          t.notOk(err)
-          l.end()
-        }))
-      })
+      connect(e.protocol + '//' + e.localAddress + ':' + e.localPort, onConnect(l, t))
     },
-    connection: function (c) {
-      _(c, _.map(function (d) {
-        t.equal(d.toString(), 'hello', 'equal')
-        return 'world'
-      }), c);
-    },
+    connection: onConnection(l, t),
     end: t.notOk
   }))
 })
@@ -50,21 +61,9 @@ test('ws ipv6', function (t) {
   _(l, on({
     ready: function (e) {
       t.equal(e.localPort, 8090)
-      connect(e.protocol + '//[' + e.localAddress + ']:' + e.localPort, function (connection) {
-        _('hello', delay(), connection, _.drain(function (d) {
-          t.equal(d.toString(), 'world')
-        }, function (err) {
-          t.notOk(err)
-          l.end()
-        }))
-      })
+      connect(e.protocol + '//[' + e.localAddress + ']:' + e.localPort, onConnect(l, t))
     },
-    connection: function (c) {
-      _(c, _.map(function (d) {
-        t.equal(d.toString(), 'hello')
-        return 'world'
-      }), c)
-    },
+    connection: onConnection(l, t),
     end: t.notOk
   }))
 })
@@ -72,27 +71,15 @@ test('ws ipv6', function (t) {
 test('ws+unix', function (t) {
   t.plan(4)
 
-  var l = listen('ws+unix://'+os.tmpdir()+'/test.socket')
+  var l = listen('ws+unix://' + os.tmpdir() + '/test.socket')
 
   _(l, on({
     ready: function (e) {
-      connect(e.protocol + '//' + e.localAddress, function (connection) {
-        _('hello', delay(), connection, _.drain(function (d) {
-          t.equal(d.toString(), 'world')
-        }, function (err) {
-          t.notOk(err)
-          l.end()
-        }))
-      })
+      connect(e.protocol + '//' + e.localAddress, onConnect(l, t))
     },
-    connection: function (c) {
-      _(c, _.map(function (d) {
-        t.equal(d.toString(), 'hello')
-        return 'world'
-      }), c)
-    },
+    connection: onConnection(l, t),
     end: function (err) {
-        t.ok(err == null);
+      t.ok(err == null);
     }
   }))
 })
