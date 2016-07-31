@@ -37,7 +37,7 @@ function onConnect(l, t) {
   }
 }
 
-test('tcp v4', function (t) {
+test('ws v4', function (t) {
   t.plan(5)
 
   var l = listen('ws://127.0.0.1:8090')
