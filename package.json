@@ -41,6 +41,7 @@
     "browserify": "^13.1.0",
     "pull-goodbye": "^0.0.1",
     "pull-serializer": "^0.3.2",
+    "pull-stream": "^3.4.3",
     "tape": "^4.6.0",
     "uglifyjs": "^2.4.10",
     "zuul": "^3.10.1"
