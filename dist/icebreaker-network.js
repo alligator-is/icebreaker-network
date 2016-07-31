@@ -31,7 +31,7 @@ module.exports = function connect(s, params,cb) {
   delete params.unixProtocols;
 
   var protocols = params.protocols||{};
-  delete params.protocols;
+
 
   function isUnixProtocol(url){
 	 return unixProtocols[url.protocol] !=null;
@@ -96,7 +96,9 @@ module.exports = function connect(s, params,cb) {
             url.path = path.join('\\\\.\\pipe', url.path);
         }
       }
-
+      
+      if(util.isString(url.port))url.port=parseInt(url.port)
+     
       return url
     }
   }
