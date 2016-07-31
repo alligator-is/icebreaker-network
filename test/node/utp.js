@@ -34,10 +34,7 @@ function onConnect(l, t) {
         source: _('hello'),
         sink: _.drain(function (d) {
           t.equal(d.toString(), 'world', 'equals')
-        }, function (err) {
-          t.notOk(err)
-          l.end()
-        })
+        }, l.end)
       }, 'GoodBye')),
       connection
     )
@@ -46,16 +43,16 @@ function onConnect(l, t) {
 }
 
 test('utp', function (t) {
-  t.plan(15)
+  t.plan(16)
 
-  var ziggy = listen('udp://127.0.0.1:8090')
+  var ziggy = listen('udp://127.0.0.1:8091')
   var lastInfo
   var c = 0
 
   var ce = 0
   _(ziggy, on({
     ready: function (e) {
-      t.equal(e.localPort, 8090)
+      t.equal(e.localPort, 8091)
       var handle = {
         end: function (err) {
           t.notOk(err)
@@ -94,12 +91,12 @@ test('utp', function (t) {
         return s
       }
 
-      var alice = createClient(8091, e, t)
+      var alice = createClient(8092, e, t)
       _(alice, on(handle2))
 
-      var bob = createClient(8092, e, t)
+      var bob = createClient(8093, e, t)
       _(bob, on(handle2))
-      
+
     },
     message: function (msg) {
       t.equal(msg.data.toString(), 'ping')
