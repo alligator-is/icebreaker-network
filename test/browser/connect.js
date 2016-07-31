@@ -12,10 +12,7 @@ test('ws:connect', function (t) {
         source: _('hello'),
         sink: _.drain(function (d) {
           t.equals(d, 'hello')
-        }, function (err) {
-          console.log(err);
-          t.notOk(err)
-        })
+        },t.notOk)
       }, 'GoodBye'),
       connection
     )

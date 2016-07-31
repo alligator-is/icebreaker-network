@@ -1,4 +1,4 @@
-var connect = require('./lib/connect');
+var connect = require('./lib/connect')
 var util = require('./lib/util')
 
 module.exports = {

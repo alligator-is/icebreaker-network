@@ -80,7 +80,7 @@ test('tcp+unix', function (t) {
         }),c)
     },
     end: function (err) {
-      t.ok(err == null);
+      t.ok(err == null)
     }
   }))
 })

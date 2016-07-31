@@ -12,14 +12,14 @@ test('combine',function(t){
   t.plan(9)
   _(n, on({
     ready: function (e) {
-      var index=e.localAddress.indexOf('tcp://127.0.0.1:8084');
+      var index=e.localAddress.indexOf('tcp://127.0.0.1:8084')
       t.ok(e.localAddress.indexOf('udp://0.0.0.0:8089')!==-1)
       t.ok(index!==-1)
 
       t.equals(e.localAddress.length,3)
 			connect(e.localAddress[index],function(connection){
 		  _('hello',connection,_.drain(function(d){
-        t.equals(d.toString(),'world2');
+        t.equals(d.toString(),'world2')
       },function(){
         console.log('end')
       }))
