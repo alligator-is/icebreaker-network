@@ -20,8 +20,6 @@ browsers:
     version: latest
   - name: safari
     version: 7..latest
-  - name: ipad
-    version: [7.1,8.1,9.2]
 scripts:
   - "https://rawgit.com/alligator-io/icebreaker/master/dist/icebreaker.min.js"
 browserify:
