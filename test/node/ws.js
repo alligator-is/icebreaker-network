@@ -22,7 +22,7 @@ function onConnection(l, t) {
 function onConnect(l, t) {
   return function (err,connection) {
     t.notOk(err)
-    if(err)return;
+    if(err)return
     _(
       connection,
       goodbye({
@@ -74,14 +74,11 @@ test('ws+unix', function (t) {
   var l = listen('ws+unix://' + os.tmpdir() + '/test4.socket')
   _(l, on({
     ready: function (e) {
-      setTimeout(function(){
-  connect(e.address, onConnect(l, t))
-    
-      },200)
+        connect(e.address, onConnect(l, t)) 
     },
     connection: onConnection(l, t),
     end: function (err) {
-      t.ok(err == null);
+      t.ok(err == null)
     }
   }))
 })
