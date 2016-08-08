@@ -16,14 +16,13 @@ catch (err) {
 
 function onConnection(l, t) {
   return function (c) {
-     
-    _(c, serializer(goodbye({
+    return _(c, serializer(goodbye({
       source: _('world'),
       sink: _.drain(function (d) {
         t.equal(d.toString(), 'hello', 'equal')
       }, l.end)
     }, 'GoodBye')), c)
-    return c
+ 
   }
 }
 
@@ -46,9 +45,9 @@ function onConnect(l, t) {
 }
 
 test('utp', function (t) {
-  t.plan(14)
+  t.plan(15)
 
-  var ziggy = listen('udp://127.0.0.1:8091')
+  var ziggy = listen('udp://127.0.0.1:8091',{loopback:false})
   var lastInfo
   var c = 0
 
@@ -76,6 +75,7 @@ test('utp', function (t) {
 
       function createClient(port, e, t) {
         var l = listen('utp://127.0.0.1:' + port)
+        
         var s = _(l, map({
           ready: function (e2) {
             l.push(Buffer('ping'),e.address)
@@ -89,6 +89,7 @@ test('utp', function (t) {
           },
           connection: onConnection(handle, t)
         }))
+
         s.end = l.end
         return s
       }
@@ -102,11 +103,12 @@ test('utp', function (t) {
     },
     message: function (msg) {
       if (lastInfo) {
-        ziggy.push(msg.remoteAddress.replace('udp','utp'))
+        ziggy.push(lastInfo,msg.remoteAddress.replace('udp','utp'))
         ziggy.push(msg.remoteAddress.replace('udp','utp'), lastInfo)
       }
-      lastInfo = msg.remoteAddress
+      lastInfo = msg.remoteAddress.replace('udp','utp')
     },
     end: t.notOk
   }))
+  var send =false;
 })
