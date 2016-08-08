@@ -17,7 +17,8 @@ a network library for [pull-streams](https://github.com/dominictarr/pull-stream)
     ready: function (e) {
       console.log('socket is ready on port: '+e.localPort)
       //connect to localhost for example
-      network.connect(e.protocol + '//' + e.localAddress + ':' + e.localPort, function (connection) {
+      network.connect(e.address, function (err,connection) {
+          if(err) throw err
         // handle the client side pull-stream
         _('hello', connection, _.drain(function (d) {
           console.log(d.toString())
