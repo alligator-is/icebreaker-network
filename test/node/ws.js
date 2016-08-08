@@ -15,11 +15,14 @@ function onConnection(l, t) {
         t.equal(d.toString(), 'hello', 'equal')
       }, l.end)
     }, 'GoodBye'), c)
+    
   }
 }
 
 function onConnect(l, t) {
-  return function (connection) {
+  return function (err,connection) {
+    t.notOk(err)
+    if(err)return;
     _(
       connection,
       goodbye({
@@ -44,8 +47,7 @@ test('ws v4', function (t) {
 
   _(l, on({
     ready: function (e) {
-      t.equal(e.localPort, 8090)
-      connect(e.protocol + '//' + e.localAddress + ':' + e.localPort, onConnect(l, t))
+      connect(e.address, onConnect(l, t))
     },
     connection: onConnection(l, t),
     end: t.notOk
@@ -60,8 +62,7 @@ test('ws ipv6', function (t) {
 
   _(l, on({
     ready: function (e) {
-      t.equal(e.localPort, 8090)
-      connect(e.protocol + '//[' + e.localAddress + ']:' + e.localPort, onConnect(l, t))
+      connect(e.address , onConnect(l, t))
     },
     connection: onConnection(l, t),
     end: t.notOk
@@ -69,13 +70,14 @@ test('ws ipv6', function (t) {
 })
 
 test('ws+unix', function (t) {
-  t.plan(4)
-
-  var l = listen('ws+unix://' + os.tmpdir() + '/test.socket')
-
+  t.plan(5)
+  var l = listen('ws+unix://' + os.tmpdir() + '/test4.socket')
   _(l, on({
     ready: function (e) {
-      connect(e.protocol + '//' + e.localAddress, onConnect(l, t))
+      setTimeout(function(){
+  connect(e.address, onConnect(l, t))
+    
+      },200)
     },
     connection: onConnection(l, t),
     end: function (err) {

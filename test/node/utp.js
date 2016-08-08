@@ -16,6 +16,7 @@ catch (err) {
 
 function onConnection(l, t) {
   return function (c) {
+     
     _(c, serializer(goodbye({
       source: _('world'),
       sink: _.drain(function (d) {
@@ -27,7 +28,9 @@ function onConnection(l, t) {
 }
 
 function onConnect(l, t) {
-  return function (connection) {
+  return function (err,connection) {
+    t.notOk(err)
+    
     _(
       connection,
       serializer(goodbye({
@@ -43,7 +46,7 @@ function onConnect(l, t) {
 }
 
 test('utp', function (t) {
-  t.plan(16)
+  t.plan(14)
 
   var ziggy = listen('udp://127.0.0.1:8091')
   var lastInfo
@@ -52,7 +55,6 @@ test('utp', function (t) {
   var ce = 0
   _(ziggy, on({
     ready: function (e) {
-      t.equal(e.localPort, 8091)
       var handle = {
         end: function (err) {
           t.notOk(err)
@@ -76,13 +78,13 @@ test('utp', function (t) {
         var l = listen('utp://127.0.0.1:' + port)
         var s = _(l, map({
           ready: function (e2) {
-            l.push(Buffer('ping'), e.localPort, e.localAddress)
-            t.equal(e2.localPort, port)
+            l.push(Buffer('ping'),e.address)
+            t.equal(e2.address.indexOf(port)!==-1,true )
             return e2
           },
           message: function (msg) {
-            var d = JSON.parse(msg.data)
-            connect('utp://' + d.host + ':' + d.port, onConnect(handle, t))
+            var d = msg.data
+            connect(d.toString(), onConnect(handle, t))
             return msg
           },
           connection: onConnection(handle, t)
@@ -99,12 +101,11 @@ test('utp', function (t) {
 
     },
     message: function (msg) {
-      t.equal(msg.data.toString(), 'ping')
       if (lastInfo) {
-        ziggy.push(JSON.stringify(lastInfo), msg.remotePort, msg.remoteAddress)
-        ziggy.push(JSON.stringify({ port: msg.remotePort, host: msg.remoteAddress }), lastInfo.port, lastInfo.host)
+        ziggy.push(msg.remoteAddress.replace('udp','utp'))
+        ziggy.push(msg.remoteAddress.replace('udp','utp'), lastInfo)
       }
-      lastInfo = { port: msg.remotePort, host: msg.remoteAddress }
+      lastInfo = msg.remoteAddress
     },
     end: t.notOk
   }))

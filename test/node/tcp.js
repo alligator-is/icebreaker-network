@@ -12,8 +12,8 @@ test('tcp v4', function (t) {
 
   _(l, on({
     ready: function (e) {
-      t.equal(e.localPort, 8090)
-      connect(e.protocol + '//' + e.localAddress + ':' + e.localPort, function (connection) {
+      connect(e.address, function (err,connection) {
+         t.notOk(err)
         _('hello', connection, _.drain(function (d) {
           t.equal(d.toString(), 'world')
         }, function (err) {
@@ -23,6 +23,7 @@ test('tcp v4', function (t) {
       })
     },
     connection: function (c) {
+
        _(c,_.map(function(d){
         t.equal(d.toString(), 'hello')
         return 'world'
@@ -39,8 +40,9 @@ test('tcp ipv6', function (t) {
 
   _(l, on({
     ready: function (e) {
-      t.equal(e.localPort, 8090)
-      connect(e.protocol + '//[' + e.localAddress + ']:' + e.localPort, function (connection) {
+      connect(e.address , function (err,connection) {
+          t.notOk(err)
+        
         _('hello', connection, _.drain(function (d) {
           t.equal(d.toString(), 'world')
         }, function (err) {
@@ -58,13 +60,14 @@ test('tcp ipv6', function (t) {
   }))
 })
 var path = require('path')
-test('tcp+unix', function (t) {
-  t.plan(4)
-  var l = listen('tcp+unix://'+os.tmpdir()+'/test3.socket')
 
+test('tcp+unix', function (t) {
+  t.plan(5)
+  var l = listen('tcp+unix://'+os.tmpdir()+'/test3.socket')
   _(l, on({
     ready: function (e) {
-      connect(e.protocol + '//' + e.localAddress, function (connection) {
+      connect(e.address, function (err,connection) {
+        t.notOk(err)
         _('hello', connection, _.drain(function (d) {
           t.equal(d.toString(), 'world')
         }, function (err) {

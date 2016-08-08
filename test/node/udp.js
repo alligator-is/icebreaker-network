@@ -5,12 +5,8 @@ var listen = require('../../').listen
 var on = require('../../').on
 
 function check(params, params2, t) {
-  if (!t) {
-    t = params2
-    params2 = null
-  }
 
-  var udp = listen(params)
+  var udp = listen(params,params2)
 
   _(udp,
     on({
@@ -23,7 +19,7 @@ function check(params, params2, t) {
     })
 
   )
-  var udp2 = listen(params2 || params)
+  var udp2 = listen(params,params2)
 
   _(udp2,
     on({
@@ -43,11 +39,11 @@ function check(params, params2, t) {
 
 test('udp v4 multicast', function (t) {
   t.plan(4)
-  check('udp://0.0.0.0:8801?loopback=true&reuseAddr=true&multicast=239.5.5.5', t)
+  check('udp://0.0.0.0:8801',{loopback:true,reuseAddr:true,multicast:'239.5.5.5'}, t)
 })
 
 
 test('udp v4 broadcast', function (t2) {
   t2.plan(4)
-  check('udp://0.0.0.0:8802?loopback=true&reuseAddr=true&broadcast=255.255.255.255', t2)
+  check('udp://0.0.0.0:8802',{loopback:true,reuseAddr:true,broadcast:'255.255.255.255'}, t2)
 })

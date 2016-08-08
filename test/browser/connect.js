@@ -4,8 +4,9 @@ var network = require('../../browser.js')
 var _ = icebreaker
 
 test('ws:connect', function (t) {
-  t.plan(2)
-  network.connect('wss://echo.websocket.org', function (connection) {
+  t.plan(3)
+  network.connect('wss://echo.websocket.org', function (err,connection) {
+    t.notOk(err)
     _(
       connection,
       goodbye({

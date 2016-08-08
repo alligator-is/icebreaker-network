@@ -32,7 +32,6 @@ module.exports = {
       'tcp+unix:': require('./lib/tcp/connect'),
       'ws+unix:': require('./lib/ws/connect')
     })
-
     var url = util.parseUrl(s)
     if (params.unixProtocols[url.protocol] != null) return unixListen(s, params)
 
@@ -64,5 +63,6 @@ module.exports = {
   },
   combine: require('./lib/combine'),
   on: require('./lib/on'),
-  map: require('./lib/map')
+  map: require('./lib/map'),
+  asyncMap: require('./lib/asyncMap')
 }
