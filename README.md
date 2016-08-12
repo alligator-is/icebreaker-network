@@ -9,17 +9,17 @@ a network library for [pull-streams](https://github.com/dominictarr/pull-stream)
 
 ## Example
 ```javascript
-  var _ = require('icebreaker');
-  var network = require('icebreaker-network')
+  var _ = require('icebreaker')
+  var network = require('../')
   var listen = network.listen('tcp://127.0.0.1:8090')
 
   _(listen, network.on({
     ready: function (e) {
-      console.log('socket is ready on port: '+e.localPort)
+      console.log('socket is ready on port: '+e.address)
       //connect to localhost for example
       network.connect(e.address, function (err,connection) {
-          if(err) throw err
         // handle the client side pull-stream
+        if(err)  throw err
         _('hello', connection, _.drain(function (d) {
           console.log(d.toString())
         }, function (err) {
@@ -35,9 +35,10 @@ a network library for [pull-streams](https://github.com/dominictarr/pull-stream)
       }), s)
     },
     end: function () {
-      console.log('socket closed');
+      console.log('socket closed')
     }
   }))
+  
   ```
   
 ## License
