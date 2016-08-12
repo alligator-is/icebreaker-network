@@ -9,16 +9,15 @@ module.exports = {
       params = {}
     }
     if (!params.protocols) params.protocols = {
-        'ws:': require('./lib/ws/connect'),
-        'wss:': require('./lib/ws/connect'),
-
+      'ws:': require('./lib/ws/connect'),
+      'wss:': require('./lib/ws/connect'),
+      'shs+ws:': require('./lib/shs/connect')
     }
     if (!params.unixProtocols) params.unixProtocols = {}
     return connect(s, params, cb)
   }
 }
-
-},{"./lib/connect":2,"./lib/util":3,"./lib/ws/connect":4}],2:[function(require,module,exports){
+},{"./lib/connect":2,"./lib/shs/connect":3,"./lib/util":4,"./lib/ws/connect":5}],2:[function(require,module,exports){
 'use strict'
 var util = require('./util')
 var defaults = util.defaults
@@ -32,9 +31,7 @@ module.exports = function connect(s, params, cb) {
   }
 
   var unixProtocols = params.unixProtocols || {}
- 
-  delete params.unixProtocols
- 
+  
   var protocols = params.protocols || {}
 
   function isUnixProtocol(url) {
@@ -47,34 +44,36 @@ module.exports = function connect(s, params, cb) {
 
   function connect(address) {
     var c = protocols[url.protocol] || unixProtocols[url.protocol]
-
     if (!c && !isUnixProtocol(url)) throw new Error('protocol ' + url.protocol + ' not found!')
 
-    c(defaults(isUnixProtocol(url) ? { path: url.path, protocol: url.protocol } : {
-      port: url.port,
-      host: address || url.hostname,
-      protocol: url.protocol,
-      path: url.path == '/' ? null : url.path,
-      auth: url.auth,
+    c(defaults(isUnixProtocol(url) ? {
+      path: url.path, protocol: url.protocol, auth: url.auth,
       appKey: url.appKey,
-    }, params), function (err, connection) {
-  
-      if (err) return cb(err)
-  
-      cb(null, {
-        type: 'connection',
-        source: connection.source,
-        sink: connection.sink,
-        auth: connection.auth,
-        address: s
+    } : {
+        port: url.port,
+        host: address || url.hostname,
+        protocol: url.protocol,
+        path: url.path == '/' ? null : url.path,
+        auth: url.auth,
+        appKey: url.appKey,
+      }, params), function (err, connection) {
+
+        if (err) return cb(err)
+
+        cb(null, {
+          type: 'connection',
+          source: connection.source,
+          sink: connection.sink,
+          auth: connection.auth,
+          address: s
+        })
       })
-    })
   }
-  
-  if(isUnixProtocol(url))return connect()
-  if(!dns.lookup || !net.isIP)return connect();
+
+  if (isUnixProtocol(url)) return connect()
+  if (!dns.lookup || !net.isIP) return connect();
   if (util.isString(url.hostname) && !net.isIP(url.hostname)) {
-     dns.lookup(url.hostname, function (err, address, family) {
+    dns.lookup(url.hostname, function (err, address, family) {
       connect(address);
     })
     return
@@ -82,7 +81,34 @@ module.exports = function connect(s, params, cb) {
 
   connect();
 }
-},{"./util":3,"dns":5,"net":5}],3:[function(require,module,exports){
+},{"./util":4,"dns":6,"net":6}],3:[function(require,module,exports){
+(function (Buffer){
+var SHS = require('secret-handshake');
+var util = require('../util');
+
+var _ = typeof icebreaker ==='function'?icebreaker : require('icebreaker');
+var cl = require('chloride')
+
+module.exports = function (params, cb) {
+  params.protocol = params.protocol || 'shs+tcp:'
+  var protocol = params.protocol.substring(params.protocol.indexOf('+') + 1)
+  if (!util.isString(params.auth)) throw new Error('public key required')
+  var publicKey = util.toBuffer(params.auth);
+  protocol = params.protocols[protocol] || params.unixProtocols[protocol]
+
+  if (!util.isPlainObject(params.keys) && !util.isString(params.keys.private) && !util.isString(params.keys.public)) throw new Error('private and public keys required')
+
+  protocol(params, function (err, connection) {
+    if (err) return cb(err, connection)
+    _(connection, SHS.createClient(params.keys, new Buffer(cl.crypto_hash_sha256(new Buffer(params.appKey)), 'base64'))(publicKey, function (err, s) {
+      if (err) return cb(err)
+      cb(null, util.defaults({ appKey: params.appKey }, util.defaults(s, connection)))
+
+    }), connection)
+  })
+}
+}).call(this,require("buffer").Buffer)
+},{"../util":4,"buffer":8,"chloride":23,"icebreaker":undefined,"secret-handshake":87}],4:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var URL = require('url')
@@ -169,16 +195,15 @@ var util = module.exports = {
 
     if (url.protocol.indexOf('shs+') !== -1) {
       if (url.path == null || url.path.length === 1) throw new Error('appKey is required')
-
-      url.appKey = url.path.slice(1)
-      url.path = '/';
+      url.appKey = path.parse(url.path).base
+      url.path = path.parse(url.path).dir;
     }
 
     return url
   }
 }
 }).call(this,require("buffer").Buffer)
-},{"buffer":7,"chloride":21,"lodash.defaults":29,"net":5,"os":5,"path":11,"url":17}],4:[function(require,module,exports){
+},{"buffer":8,"chloride":23,"lodash.defaults":32,"net":6,"os":6,"path":13,"url":19}],5:[function(require,module,exports){
 'use strict'
 
 var Net = require('net')
@@ -193,7 +218,7 @@ module.exports = function (params, cb) {
     protocol: params.protocol,
     port: params.port,
     pathname: params.path,
-    slashes: true,
+    slashes: true
   }
   if (params.path == null) {
     address.hostname = params.host
@@ -210,14 +235,12 @@ module.exports = function (params, cb) {
       cb = null
     }
   })
-
-  c.type='connection'
 }
-},{"../util":3,"lodash.pick":32,"net":5,"pull-ws/client":35,"url":17}],5:[function(require,module,exports){
+},{"../util":4,"lodash.pick":35,"net":6,"pull-ws/client":78,"url":19}],6:[function(require,module,exports){
 
-},{}],6:[function(require,module,exports){
-arguments[4][5][0].apply(exports,arguments)
-},{"dup":5}],7:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
+arguments[4][6][0].apply(exports,arguments)
+},{"dup":6}],8:[function(require,module,exports){
 (function (global){
 /*!
  * The buffer module from node.js, for the browser.
@@ -1932,7 +1955,7 @@ function isnan (val) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":8,"ieee754":9,"isarray":10}],8:[function(require,module,exports){
+},{"base64-js":9,"ieee754":10,"isarray":11}],9:[function(require,module,exports){
 'use strict'
 
 exports.toByteArray = toByteArray
@@ -2043,7 +2066,7 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
   var eLen = nBytes * 8 - mLen - 1
@@ -2129,14 +2152,33 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 var toString = {}.toString;
 
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
+/**
+ * Determine if an object is Buffer
+ *
+ * Author:   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
+ * License:  MIT
+ *
+ * `npm install is-buffer`
+ */
+
+module.exports = function (obj) {
+  return !!(obj != null &&
+    (obj._isBuffer || // For Safari 5-7 (missing Object.prototype.constructor)
+      (obj.constructor &&
+      typeof obj.constructor.isBuffer === 'function' &&
+      obj.constructor.isBuffer(obj))
+    ))
+}
+
+},{}],13:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2364,7 +2406,7 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":12}],12:[function(require,module,exports){
+},{"_process":14}],14:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -2485,7 +2527,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],13:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -3022,7 +3064,7 @@ process.umask = function() { return 0; };
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],14:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3108,7 +3150,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],15:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3195,13 +3237,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],16:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":14,"./encode":15}],17:[function(require,module,exports){
+},{"./decode":16,"./encode":17}],19:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3935,7 +3977,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":18,"punycode":13,"querystring":16}],18:[function(require,module,exports){
+},{"./util":20,"punycode":15,"querystring":18}],20:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -3953,15 +3995,15 @@ module.exports = {
   }
 };
 
-},{}],19:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 var _require = require //fool browserify
 module.exports = _require('sodium-prebuilt/build/Release/sodium')
 
-},{}],20:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 
 module.exports = require('sodium-browserify-tweetnacl')
 
-},{"sodium-browserify-tweetnacl":22}],21:[function(require,module,exports){
+},{"sodium-browserify-tweetnacl":24}],23:[function(require,module,exports){
 (function (process,Buffer){
 
 if(process.env.CHLORIDE_JS)
@@ -4007,7 +4049,7 @@ try {
 
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./bindings":19,"./browser-small":20,"_process":12,"buffer":7,"electron":6}],22:[function(require,module,exports){
+},{"./bindings":21,"./browser-small":22,"_process":14,"buffer":8,"electron":7}],24:[function(require,module,exports){
 (function (Buffer){
 
 var tweetnacl = require('tweetnacl/nacl-fast')
@@ -4113,7 +4155,7 @@ exports.randombytes = function (buf) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":7,"ed2curve":23,"sha.js/sha256":26,"tweetnacl-auth":27,"tweetnacl/nacl-fast":28}],23:[function(require,module,exports){
+},{"buffer":8,"ed2curve":25,"sha.js/sha256":28,"tweetnacl-auth":29,"tweetnacl/nacl-fast":30}],25:[function(require,module,exports){
 /*
  * ed2curve: convert Ed25519 signing key pair into Curve25519
  * key pair suitable for Diffie-Hellman key exchange.
@@ -4281,7 +4323,7 @@ exports.randombytes = function (buf) {
 
 }));
 
-},{"tweetnacl/nacl-fast":28}],24:[function(require,module,exports){
+},{"tweetnacl/nacl-fast":30}],26:[function(require,module,exports){
 (function (Buffer){
 // prototype class for hash functions
 function Hash (blockSize, finalSize) {
@@ -4354,7 +4396,7 @@ Hash.prototype._update = function () {
 module.exports = Hash
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":7}],25:[function(require,module,exports){
+},{"buffer":8}],27:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -4379,7 +4421,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],26:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 (function (Buffer){
 /**
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
@@ -4517,7 +4559,7 @@ Sha256.prototype._hash = function () {
 module.exports = Sha256
 
 }).call(this,require("buffer").Buffer)
-},{"./hash":24,"buffer":7,"inherits":25}],27:[function(require,module,exports){
+},{"./hash":26,"buffer":8,"inherits":27}],29:[function(require,module,exports){
 (function(root, f) {
   'use strict';
   if (typeof module !== 'undefined' && module.exports) module.exports = f(require('tweetnacl'));
@@ -4566,7 +4608,7 @@ module.exports = Sha256
 
 }));
 
-},{"tweetnacl":28}],28:[function(require,module,exports){
+},{"tweetnacl":30}],30:[function(require,module,exports){
 (function(nacl) {
 'use strict';
 
@@ -6956,7 +6998,19 @@ nacl.setPRNG = function(fn) {
 
 })(typeof module !== 'undefined' && module.exports ? module.exports : (self.nacl = self.nacl || {}));
 
-},{"crypto":6}],29:[function(require,module,exports){
+},{"crypto":7}],31:[function(require,module,exports){
+
+
+module.exports = function (buf) {
+  var len = buf.length, i
+
+  for(i = len - 1; buf[i] === 255; i--) buf[i] = 0
+  if(~i) buf[i] = buf[i] + 1
+
+  return buf
+}
+
+},{}],32:[function(require,module,exports){
 /**
  * lodash 4.0.1 (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -7073,7 +7127,7 @@ var defaults = rest(function(args) {
 
 module.exports = defaults;
 
-},{"lodash.assigninwith":30,"lodash.rest":34}],30:[function(require,module,exports){
+},{"lodash.assigninwith":33,"lodash.rest":37}],33:[function(require,module,exports){
 /**
  * lodash (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -7440,7 +7494,7 @@ var assignInWith = createAssigner(function(object, source, srcIndex, customizer)
 
 module.exports = assignInWith;
 
-},{"lodash.keysin":31,"lodash.rest":34}],31:[function(require,module,exports){
+},{"lodash.keysin":34,"lodash.rest":37}],34:[function(require,module,exports){
 (function (global){
 /**
  * lodash (Custom Build) <https://lodash.com/>
@@ -7957,7 +8011,7 @@ function keysIn(object) {
 module.exports = keysIn;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],32:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 /**
  * lodash (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -8138,7 +8192,7 @@ var pick = rest(function(object, props) {
 
 module.exports = pick;
 
-},{"lodash._baseflatten":33,"lodash.rest":34}],33:[function(require,module,exports){
+},{"lodash._baseflatten":36,"lodash.rest":37}],36:[function(require,module,exports){
 /**
  * lodash (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -8489,7 +8543,7 @@ function isObjectLike(value) {
 
 module.exports = baseFlatten;
 
-},{}],34:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 /**
  * lodash (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -8836,7 +8890,1241 @@ function toNumber(value) {
 
 module.exports = rest;
 
-},{}],35:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
+
+var looper = module.exports = function (fun) {
+  (function next () {
+    var loop = true, returned = false, sync = false
+    do {
+      sync = true; loop = false
+      fun.call(this, function () {
+        if(sync) loop = true
+        else     next()
+      })
+      sync = false
+    } while(loop)
+  })()
+}
+
+},{}],39:[function(require,module,exports){
+(function (Buffer){
+'use strict'
+var sodium = require('chloride')
+var Reader = require('pull-reader')
+var increment = require('increment-buffer')
+var through = require('pull-through')
+var split = require('split-buffer')
+
+var isBuffer = Buffer.isBuffer
+var concat = Buffer.concat
+
+var box = sodium.crypto_secretbox_easy
+var unbox = sodium.crypto_secretbox_open_easy  
+
+function unbox_detached (mac, boxed, nonce, key) {
+  return sodium.crypto_secretbox_open_easy(concat([mac, boxed]), nonce, key)
+}
+
+var max = 1024*4
+
+var NONCE_LEN = 24
+var HEADER_LEN = 2+16+16
+
+function isZeros(b) {
+  for(var i = 0; i < b.length; i++)
+    if(b[i] !== 0) return false
+  return true
+}
+
+function randomSecret(n) {
+  var rand = new Buffer(n)
+  sodium.randombytes(rand)
+  return rand
+}
+
+function copy (a) {
+  var b = new Buffer(a.length)
+  a.copy(b, 0, 0, a.length)
+  return b
+}
+
+exports.createBoxStream =
+exports.createEncryptStream = function (key, init_nonce) {
+
+  if(key.length === 56) {
+    init_nonce = key.slice(32, 56)
+    key = key.slice(0, 32)
+  }
+  else if(!(key.length === 32 && init_nonce.length === 24))
+    throw new Error('nonce must be 24 bytes')
+
+  // we need two nonces because increment mutates,
+  // and we need the next for the header,
+  // and the next next nonce for the packet
+  var nonce1 = copy(init_nonce), nonce2 = copy(init_nonce)
+  var head = new Buffer(18)
+
+  return through(function (data) {
+
+    if('string' === typeof data)
+      data = new Buffer(data, 'utf8')
+    else if(!isBuffer(data))
+      return this.emit('error', new Error('must be buffer'))
+
+    if(data.length === 0) return
+
+    var input = split(data, max)
+
+    for(var i = 0; i < input.length; i++) {
+      head.writeUInt16BE(input[i].length, 0)
+      var boxed = box(input[i], increment(nonce2), key)
+      //write the mac into the header.
+      boxed.copy(head, 2, 0, 16)
+
+      this.queue(box(head, nonce1, key))
+      this.queue(boxed.slice(16, 16 + input[i].length))
+
+      increment(increment(nonce1)); increment(nonce2)
+    }
+  }, function (err) {
+    if(err) return this.queue(null)
+
+    //handle special-case of empty session
+    //final header is same length as header except all zeros (inside box)
+    var final = new Buffer(2+16); final.fill(0)
+    this.queue(box(final, nonce1, key))
+    this.queue(null)
+  })
+
+}
+exports.createUnboxStream =
+exports.createDecryptStream = function (key, nonce) {
+
+
+  if(key.length == 56) {
+    nonce = key.slice(32, 56)
+    key = key.slice(0, 32)
+  }
+  else if(!(key.length === 32 && nonce.length === 24))
+    throw new Error('nonce must be 24 bytes')
+
+  var reader = Reader(), first = true,  ended
+  var first = true
+
+  return function (read) {
+    reader(read)
+    return function (end, cb) {
+      if(end) return reader.abort(end, cb)
+      //use abort when the input was invalid,
+      //but the source hasn't actually ended yet.
+      function abort(err) {
+        reader.abort(ended = err || true, cb)
+      }
+
+      if(ended) return cb(ended)
+      reader.read(HEADER_LEN, function (err, cipherheader) {
+        if(err === true) return cb(ended = new Error('unexpected hangup'))
+        if(err) return cb(ended = err)
+
+        var header = unbox(cipherheader, nonce, key)
+
+        if(!header)
+          return abort(new Error('invalid header'))
+
+        //valid end of stream
+        if(isZeros(header))
+          return cb(ended = true)
+
+        var length = header.readUInt16BE(0)
+        var mac = header.slice(2, 34)
+
+        reader.read(length, function (err, cipherpacket) {
+          if(err) return cb(ended = err)
+          //recreate a valid packet
+          //TODO: PR to sodium bindings for detached box/open
+          var plainpacket = unbox_detached(mac, cipherpacket, increment(nonce), key)
+          if(!plainpacket)
+            return abort(new Error('invalid packet'))
+
+          increment(nonce)
+          cb(null, plainpacket)
+        })
+      })
+    }
+  }
+}
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":8,"chloride":23,"increment-buffer":31,"pull-reader":44,"pull-through":77,"split-buffer":90}],40:[function(require,module,exports){
+var noop = function () {}
+
+function abortAll(ary, abort, cb) {
+  var n = ary.length
+  if(!n) return cb(abort)
+  ary.forEach(function (f) {
+    if(f) f(abort, next)
+    else next()
+  })
+
+  function next() {
+    if(--n) return
+    cb(abort)
+  }
+  if(!n) next()
+}
+
+module.exports = function (streams) {
+  return function (abort, cb) {
+    ;(function next () {
+      if(abort)
+        abortAll(streams, abort, cb)
+      else if(!streams.length)
+        cb(true)
+      else if(!streams[0])
+        streams.shift(), next()
+      else
+        streams[0](null, function (err, data) {
+          if(err) {
+            streams.shift() //drop the first, has already ended.
+            if(err === true) next()
+            else             abortAll(streams, err, cb)
+          }
+          else
+            cb(null, data)
+        })
+    })()
+  }
+}
+
+
+
+},{}],41:[function(require,module,exports){
+var Reader = require('pull-reader')
+var Writer = require('pull-pushable')
+var cat = require('pull-cat')
+var pair = require('pull-pair')
+
+function once (cb) {
+  var called = 0
+  return function (a, b, c) {
+    if(called++) return
+    cb(a, b, c)
+  }
+}
+
+function isFunction (f) {
+  return 'function' === typeof f
+}
+
+module.exports = function (opts, _cb) {
+  if(isFunction(opts)) _cb = opts, opts = {}
+  _cb = once(_cb || function noop () {})
+  var reader = Reader(opts && opts.timeout || 5e3)
+  var writer = Writer(function (err) {
+    if(err) _cb(err)
+  })
+
+  var p = pair()
+
+  return {
+    handshake: {
+      read: reader.read,
+      abort: function (err) {
+        writer.end(err)
+        reader.abort(err, function (err) {
+        })
+        _cb(err)
+      },
+      write: writer.push,
+      rest: function () {
+        writer.end()
+        return {
+          source: reader.read(),
+          sink: p.sink
+        }
+      }
+    },
+    sink: reader,
+    source: cat([writer, p.source])
+  }
+}
+
+},{"pull-cat":40,"pull-pair":42,"pull-pushable":43,"pull-reader":44}],42:[function(require,module,exports){
+'use strict'
+
+//a pair of pull streams where one drains from the other
+module.exports = function () {
+  var _read, waiting
+  function sink (read) {
+    if('function' !== typeof read)
+      throw new Error('read must be function')
+
+    if(_read)
+      throw new Error('already piped')
+    _read = read
+    if(waiting) {
+      var _waiting = waiting
+      waiting = null
+      _read.apply(null, _waiting)
+    }
+  }
+  function source (abort, cb) {
+    if(_read)
+      _read(abort, cb)
+    else
+      waiting = [abort, cb]
+  }
+
+  return {
+    source: source, sink: sink
+  }
+}
+
+
+},{}],43:[function(require,module,exports){
+module.exports = function (onClose) {
+  var buffer = [], ended, abort, cb
+
+  function callback (err, val) {
+    var _cb = cb
+    if(err && onClose) {
+      var c = onClose
+      onClose = null
+      c(err === true ? null : err)
+    }
+    cb = null
+    _cb(err, val)
+
+  }
+
+  function drain() {
+    if(!cb) return
+
+    if(abort)                        callback(abort)
+    else if(!buffer.length && ended) callback(ended)
+    else if(buffer.length)           callback(null, buffer.shift())
+  }
+
+  function read (_abort, _cb) {
+    if(_abort) {
+      abort = _abort
+      //if there is already a cb waiting, abort it.
+      if(cb) callback(abort)
+    }
+    cb = _cb
+    drain()
+  }
+
+  read.push = function (data) {
+    if(ended) return
+    buffer.push(data)
+    drain()
+  }
+
+  read.end = function (end) {
+    ended = ended || end || true;
+    drain()
+  }
+
+  return read
+}
+
+
+
+},{}],44:[function(require,module,exports){
+'use strict'
+var State = require('./state')
+
+function isInteger (i) {
+  return Number.isFinite(i)
+}
+
+function isFunction (f) {
+  return 'function' === typeof f
+}
+
+function maxDelay(fn, delay) {
+  if(!delay) return fn
+  return function (a, cb) {
+    var timer = setTimeout(function () {
+      fn(new Error('pull-reader: read exceeded timeout'), cb)
+    }, delay)
+    fn(a, function (err, value) {
+      clearTimeout(timer)
+      cb(err, value)
+    })
+
+  }
+
+}
+
+module.exports = function (timeout) {
+
+  var queue = [], read, readTimed, reading = false
+  var state = State(), ended, streaming, abort
+
+  function drain () {
+    while (queue.length) {
+      if(null == queue[0].length && state.has(1)) {
+        queue.shift().cb(null, state.get())
+      }
+      else if(state.has(queue[0].length)) {
+        var next = queue.shift()
+        next.cb(null, state.get(next.length))
+      }
+      else if(ended)
+        queue.shift().cb(ended)
+      else
+        return !!queue.length
+    }
+    //always read a little data
+    return queue.length || !state.has(1) || abort
+  }
+
+  function more () {
+    var d = drain()
+    if(d && !reading)
+    if(read && !reading && !streaming) {
+      reading = true
+      readTimed (null, function (err, data) {
+        reading = false
+        if(err) {
+          ended = err
+          return drain()
+        }
+        state.add(data)
+        more()
+      })
+    }
+  }
+
+  function reader (_read) {
+    if(abort) {
+      while(queue.length) queue.shift().cb(abort)
+      return cb && cb(abort)
+    }
+    readTimed = maxDelay(_read, timeout)
+    read = _read
+    more()
+  }
+
+  reader.abort = function (err, cb) {
+    abort = err || true
+    if(read) {
+      reading = true
+      read(abort, function () {
+        while(queue.length) queue.shift().cb(abort)
+        cb && cb(abort)
+      })
+    }
+    else
+      cb()
+  }
+
+  reader.read = function (len, timeout, cb) {
+    if(isFunction(timeout))
+      cb = timeout, timeout = 0
+    if(isFunction(cb)) {
+      queue.push({length: isInteger(len) ? len : null, cb: cb})
+      more()
+    }
+    else {
+      //switch into streaming mode for the rest of the stream.
+      streaming = true
+      //wait for the current read to complete
+      return function (abort, cb) {
+        //if there is anything still in the queue,
+        if(reading || state.has(1)) {
+          if(abort) return read(abort, cb)
+          queue.push({length: null, cb: cb})
+          more()
+        }
+        else
+          maxDelay(read, timeout)(abort, function (err, data) {
+            cb(err, data)
+          })
+      }
+    }
+  }
+
+  return reader
+}
+
+
+
+
+
+
+},{"./state":45}],45:[function(require,module,exports){
+(function (Buffer){
+
+module.exports = function () {
+
+  var buffers = [], length = 0
+
+  //just used for debugging...
+  function calcLength () {
+    return buffers.reduce(function (a, b) {
+      return a + b.length
+    }, 0)
+  }
+
+  return {
+    length: length,
+    data: this,
+    add: function (data) {
+      if(!Buffer.isBuffer(data))
+        throw new Error('data must be a buffer, was: ' + JSON.stringify(data))
+      this.length = length = length + data.length
+      buffers.push(data)
+      return this
+    },
+    has: function (n) {
+      if(null == n) return length > 0
+      return length >= n
+    },
+    get: function (n) {
+      var _length
+      if(n == null || n === length) {
+        length = 0
+        var _buffers = buffers
+        buffers = []
+        if(_buffers.length == 1)
+          return _buffers[0]
+        else
+          return Buffer.concat(_buffers)
+      } else if (buffers.length > 1 && n <= (_length = buffers[0].length)) {
+        var buf = buffers[0].slice(0, n)
+        if(n === _length) {
+          buffers.shift()
+        }
+        else {
+          buffers[0] = buffers[0].slice(n, _length)
+        }
+        length -= n
+        return buf
+      }  else if(n < length) {
+        var out = [], len = 0
+
+        while((len + buffers[0].length) < n) {
+          var b = buffers.shift()
+          len += b.length
+          out.push(b)
+        }
+
+        if(len < n) {
+          out.push(buffers[0].slice(0, n - len))
+          buffers[0] = buffers[0].slice(n - len, buffers[0].length)
+          this.length = length = length - n
+        }
+        return Buffer.concat(out)
+      }
+      else
+        throw new Error('could not get ' + n + ' bytes')
+    }
+  }
+
+}
+
+
+
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":8}],46:[function(require,module,exports){
+'use strict'
+
+var sources  = require('./sources')
+var sinks    = require('./sinks')
+var throughs = require('./throughs')
+
+exports = module.exports = require('./pull')
+
+for(var k in sources)
+  exports[k] = sources[k]
+
+for(var k in throughs)
+  exports[k] = throughs[k]
+
+for(var k in sinks)
+  exports[k] = sinks[k]
+
+
+},{"./pull":47,"./sinks":52,"./sources":59,"./throughs":68}],47:[function(require,module,exports){
+'use strict'
+
+module.exports = function pull (a) {
+  var length = arguments.length
+  if (typeof a === 'function' && a.length === 1) {
+    var args = new Array(length)
+    for(var i = 0; i < length; i++)
+      args[i] = arguments[i]
+    return function (read) {
+      args.unshift(read)
+      return pull.apply(null, args)
+    }
+  }
+
+  var read = a
+
+  if (read && typeof read.source === 'function') {
+    read = read.source
+  }
+
+  for (var i = 1; i < length; i++) {
+    var s = arguments[i]
+    if (typeof s === 'function') {
+      read = s(read)
+    } else if (s && typeof s === 'object') {
+      s.sink(read)
+      read = s.source
+    }
+  }
+
+  return read
+}
+
+
+
+
+
+
+},{}],48:[function(require,module,exports){
+'use strict'
+
+var reduce = require('./reduce')
+
+module.exports = function collect (cb) {
+  return reduce(function (arr, item) {
+    arr.push(item)
+    return arr
+  }, [], cb)
+}
+
+},{"./reduce":55}],49:[function(require,module,exports){
+'use strict'
+
+var reduce = require('./reduce')
+
+module.exports = function concat (cb) {
+  return reduce(function (a, b) {
+    return a + b
+  }, '', cb)
+}
+
+},{"./reduce":55}],50:[function(require,module,exports){
+'use strict'
+
+module.exports = function drain (op, done) {
+  var read, abort
+
+  function sink (_read) {
+    read = _read
+    if(abort) return sink.abort()
+    //this function is much simpler to write if you
+    //just use recursion, but by using a while loop
+    //we do not blow the stack if the stream happens to be sync.
+    ;(function next() {
+        var loop = true, cbed = false
+        while(loop) {
+          cbed = false
+          read(null, function (end, data) {
+            cbed = true
+            if(end = end || abort) {
+              loop = false
+              if(done) done(end === true ? null : end)
+              else if(end && end !== true)
+                throw end
+            }
+            else if(op && false === op(data) || abort) {
+              loop = false
+              read(abort || true, done || function () {})
+            }
+            else if(!loop){
+              next()
+            }
+          })
+          if(!cbed) {
+            loop = false
+            return
+          }
+        }
+      })()
+  }
+
+  sink.abort = function (err, cb) {
+    if('function' == typeof err)
+      cb = err, err = true
+    abort = err || true
+    if(read) return read(abort, cb || function () {})
+  }
+
+  return sink
+}
+
+},{}],51:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+var drain = require('./drain')
+
+module.exports = function find (test, cb) {
+  var ended = false
+  if(!cb)
+    cb = test, test = id
+  else
+    test = prop(test) || id
+
+  return drain(function (data) {
+    if(test(data)) {
+      ended = true
+      cb(null, data)
+    return false
+    }
+  }, function (err) {
+    if(ended) return //already called back
+    cb(err === true ? null : err, null)
+  })
+}
+
+
+
+
+
+},{"../util/prop":75,"./drain":50}],52:[function(require,module,exports){
+'use strict'
+
+module.exports = {
+  drain: require('./drain'),
+  onEnd: require('./on-end'),
+  log: require('./log'),
+  find: require('./find'),
+  reduce: require('./reduce'),
+  collect: require('./collect'),
+  concat: require('./concat')
+}
+
+
+},{"./collect":48,"./concat":49,"./drain":50,"./find":51,"./log":53,"./on-end":54,"./reduce":55}],53:[function(require,module,exports){
+'use strict'
+
+var drain = require('./drain')
+
+module.exports = function log (done) {
+  return drain(function (data) {
+    console.log(data)
+  }, done)
+}
+
+},{"./drain":50}],54:[function(require,module,exports){
+'use strict'
+
+var drain = require('./drain')
+
+module.exports = function onEnd (done) {
+  return drain(null, done)
+}
+
+},{"./drain":50}],55:[function(require,module,exports){
+'use strict'
+
+var drain = require('./drain')
+
+module.exports = function reduce (reducer, acc, cb) {
+  return drain(function (data) {
+    acc = reducer(acc, data)
+  }, function (err) {
+    cb(err, acc)
+  })
+}
+
+
+},{"./drain":50}],56:[function(require,module,exports){
+'use strict'
+
+module.exports = function count (max) {
+  var i = 0; max = max || Infinity
+  return function (end, cb) {
+    if(end) return cb && cb(end)
+    if(i > max)
+      return cb(true)
+    cb(null, i++)
+  }
+}
+
+
+
+},{}],57:[function(require,module,exports){
+'use strict'
+//a stream that ends immediately.
+module.exports = function empty () {
+  return function (abort, cb) {
+    cb(true)
+  }
+}
+
+},{}],58:[function(require,module,exports){
+'use strict'
+//a stream that errors immediately.
+module.exports = function error (err) {
+  return function (abort, cb) {
+    cb(err)
+  }
+}
+
+
+},{}],59:[function(require,module,exports){
+'use strict'
+module.exports = {
+  keys: require('./keys'),
+  once: require('./once'),
+  values: require('./values'),
+  count: require('./count'),
+  infinite: require('./infinite'),
+  empty: require('./empty'),
+  error: require('./error')
+}
+
+},{"./count":56,"./empty":57,"./error":58,"./infinite":60,"./keys":61,"./once":62,"./values":63}],60:[function(require,module,exports){
+'use strict'
+module.exports = function infinite (generate) {
+  generate = generate || Math.random
+  return function (end, cb) {
+    if(end) return cb && cb(end)
+    return cb(null, generate())
+  }
+}
+
+
+
+},{}],61:[function(require,module,exports){
+'use strict'
+var values = require('./values')
+module.exports = function (object) {
+  return values(Object.keys(object))
+}
+
+
+
+},{"./values":63}],62:[function(require,module,exports){
+'use strict'
+var abortCb = require('../util/abort-cb')
+
+module.exports = function once (value, onAbort) {
+  return function (abort, cb) {
+    if(abort)
+      return abortCb(cb, abort, onAbort)
+    if(value != null) {
+      var _value = value; value = null
+      cb(null, _value)
+    } else
+      cb(true)
+  }
+}
+
+
+
+},{"../util/abort-cb":74}],63:[function(require,module,exports){
+'use strict'
+var abortCb = require('../util/abort-cb')
+
+module.exports = function values (array, onAbort) {
+  if(!array)
+    return function (abort, cb) {
+      if(abort) return abortCb(cb, abort, onAbort)
+      return cb(true)
+    }
+  if(!Array.isArray(array))
+    array = Object.keys(array).map(function (k) {
+      return array[k]
+    })
+  var i = 0
+  return function (abort, cb) {
+    if(abort)
+      return abortCb(cb, abort, onAbort)
+    cb(i >= array.length || null, array[i++])
+  }
+}
+
+
+},{"../util/abort-cb":74}],64:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+
+module.exports = function asyncMap (map) {
+  if(!map) return id
+  map = prop(map)
+  var busy = false, abortCb, aborted
+  return function (read) {
+    return function next (abort, cb) {
+      if(aborted) return cb(aborted)
+      if(abort) {
+        aborted = abort
+        if(!busy) read(abort, cb)
+        else read(abort, function () {
+          //if we are still busy, wait for the mapper to complete.
+          if(busy) abortCb = cb
+          else cb(abort)
+        })
+      }
+      else
+        read(null, function (end, data) {
+          if(end) cb(end)
+          else if(aborted) cb(aborted)
+          else {
+            busy = true
+            map(data, function (err, data) {
+              busy = false
+              if(aborted) {
+                cb(aborted)
+                abortCb(aborted)
+              }
+              else if(err) next (err, cb)
+              else cb(null, data)
+            })
+          }
+        })
+    }
+  }
+}
+
+
+
+},{"../util/prop":75}],65:[function(require,module,exports){
+'use strict'
+
+var tester = require('../util/tester')
+var filter = require('./filter')
+
+module.exports = function filterNot (test) {
+  test = tester(test)
+  return filter(function (data) { return !test(data) })
+}
+
+},{"../util/tester":76,"./filter":66}],66:[function(require,module,exports){
+'use strict'
+
+var tester = require('../util/tester')
+
+module.exports = function filter (test) {
+  //regexp
+  test = tester(test)
+  return function (read) {
+    return function next (end, cb) {
+      var sync, loop = true
+      while(loop) {
+        loop = false
+        sync = true
+        read(end, function (end, data) {
+          if(!end && !test(data))
+            return sync ? loop = true : next(end, cb)
+          cb(end, data)
+        })
+        sync = false
+      }
+    }
+  }
+}
+
+
+},{"../util/tester":76}],67:[function(require,module,exports){
+'use strict'
+
+var values = require('../sources/values')
+var once = require('../sources/once')
+
+//convert a stream of arrays or streams into just a stream.
+module.exports = function flatten () {
+  return function (read) {
+    var _read
+    return function (abort, cb) {
+      if (abort) { //abort the current stream, and then stream of streams.
+        _read ? _read(abort, function(err) {
+          read(err || abort, cb)
+        }) : read(abort, cb)
+      }
+      else if(_read) nextChunk()
+      else nextStream()
+
+      function nextChunk () {
+        _read(null, function (err, data) {
+          if (err === true) nextStream()
+          else if (err) {
+            read(true, function(abortErr) {
+              // TODO: what do we do with the abortErr?
+              cb(err)
+            })
+          }
+          else cb(null, data)
+        })
+      }
+      function nextStream () {
+        _read = null
+        read(null, function (end, stream) {
+          if(end)
+            return cb(end)
+          if(Array.isArray(stream) || stream && 'object' === typeof stream)
+            stream = values(stream)
+          else if('function' != typeof stream)
+            stream = once(stream)
+          _read = stream
+          nextChunk()
+        })
+      }
+    }
+  }
+}
+
+
+},{"../sources/once":62,"../sources/values":63}],68:[function(require,module,exports){
+'use strict'
+
+module.exports = {
+  map: require('./map'),
+  asyncMap: require('./async-map'),
+  filter: require('./filter'),
+  filterNot: require('./filter-not'),
+  through: require('./through'),
+  take: require('./take'),
+  unique: require('./unique'),
+  nonUnique: require('./non-unique'),
+  flatten: require('./flatten')
+}
+
+
+
+
+},{"./async-map":64,"./filter":66,"./filter-not":65,"./flatten":67,"./map":69,"./non-unique":70,"./take":71,"./through":72,"./unique":73}],69:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+
+module.exports = function map (mapper) {
+  if(!mapper) return id
+  mapper = prop(mapper)
+  return function (read) {
+    return function (abort, cb) {
+      read(abort, function (end, data) {
+        try {
+        data = !end ? mapper(data) : null
+        } catch (err) {
+          return read(err, function () {
+            return cb(err)
+          })
+        }
+        cb(end, data)
+      })
+    }
+  }
+}
+
+},{"../util/prop":75}],70:[function(require,module,exports){
+'use strict'
+
+var unique = require('./unique')
+
+//passes an item through when you see it for the second time.
+module.exports = function nonUnique (field) {
+  return unique(field, true)
+}
+
+},{"./unique":73}],71:[function(require,module,exports){
+'use strict'
+
+//read a number of items and then stop.
+module.exports = function take (test, opts) {
+  opts = opts || {}
+  var last = opts.last || false // whether the first item for which !test(item) should still pass
+  var ended = false
+  if('number' === typeof test) {
+    last = true
+    var n = test; test = function () {
+      return --n
+    }
+  }
+
+  return function (read) {
+
+    function terminate (cb) {
+      read(true, function (err) {
+        last = false; cb(err || true)
+      })
+    }
+
+    return function (end, cb) {
+      if(ended)            last ? terminate(cb) : cb(ended)
+      else if(ended = end) read(ended, cb)
+      else
+        read(null, function (end, data) {
+          if(ended = ended || end) {
+            //last ? terminate(cb) :
+            cb(ended)
+          }
+          else if(!test(data)) {
+            ended = true
+            last ? cb(null, data) : terminate(cb)
+          }
+          else
+            cb(null, data)
+        })
+    }
+  }
+}
+
+},{}],72:[function(require,module,exports){
+'use strict'
+
+//a pass through stream that doesn't change the value.
+module.exports = function through (op, onEnd) {
+  var a = false
+
+  function once (abort) {
+    if(a || !onEnd) return
+    a = true
+    onEnd(abort === true ? null : abort)
+  }
+
+  return function (read) {
+    return function (end, cb) {
+      if(end) once(end)
+      return read(end, function (end, data) {
+        if(!end) op && op(data)
+        else once(end)
+        cb(end, data)
+      })
+    }
+  }
+}
+
+},{}],73:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+var filter = require('./filter')
+
+//drop items you have already seen.
+module.exports = function unique (field, invert) {
+  field = prop(field) || id
+  var seen = {}
+  return filter(function (data) {
+    var key = field(data)
+    if(seen[key]) return !!invert //false, by default
+    else seen[key] = true
+    return !invert //true by default
+  })
+}
+
+
+},{"../util/prop":75,"./filter":66}],74:[function(require,module,exports){
+module.exports = function abortCb(cb, abort, onAbort) {
+  cb(abort)
+  onAbort && onAbort(abort === true ? null: abort)
+  return
+}
+
+
+},{}],75:[function(require,module,exports){
+module.exports = function prop (key) {
+  return key && (
+    'string' == typeof key
+    ? function (data) { return data[key] }
+    : 'object' === typeof key && 'function' === typeof key.exec //regexp
+    ? function (data) { var v = key.exec(data); return v && v[0] }
+    : key
+  )
+}
+
+},{}],76:[function(require,module,exports){
+var prop = require('./prop')
+
+function id (e) { return e }
+
+module.exports = function tester (test) {
+  return (
+    'object' === typeof test && 'function' === typeof test.test //regexp
+    ? function (data) { return test.test(data) }
+    : prop (test) || id
+  )
+}
+
+},{"./prop":75}],77:[function(require,module,exports){
+var looper = require('looper')
+
+module.exports = function (writer, ender) {
+  return function (read) {
+    var queue = [], ended, error
+
+    function enqueue (data) {
+      queue.push(data)
+    }
+
+    writer = writer || function (data) {
+      this.queue(data)
+    }
+
+    ender = ender || function () {
+      this.queue(null)
+    }
+
+    var emitter = {
+      emit: function (event, data) {
+        if(event == 'data') enqueue(data)
+        if(event == 'end')  ended = true, enqueue(null)
+        if(event == 'error') error = data
+      },
+      queue: enqueue
+    }
+    var _cb
+    return function (end, cb) {
+      ended = ended || end
+      if(end)
+        return read(end, function () {
+          if(_cb) {
+            var t = _cb; _cb = null; t(end)
+          }
+          cb(end)
+        })
+
+      _cb = cb
+      looper(function pull (next) {
+        //if it's an error
+        if(!_cb) return
+        cb = _cb
+        if(error) _cb = null, cb(error)
+        else if(queue.length) {
+          var data = queue.shift()
+          _cb = null,cb(data === null, data)
+        }
+        else {
+          read(ended, function (end, data) {
+             //null has no special meaning for pull-stream
+            if(end && end !== true) {
+              error = end; return next()
+            }
+            if(ended = ended || end)  ender.call(emitter)
+            else if(data !== null) {
+              writer.call(emitter, data)
+              if(error || ended)
+                return read(error || ended, function () {
+                  _cb = null; cb(error || ended)
+                })
+            }
+            next(pull)
+          })
+        }
+      })
+    }
+  }
+}
+
+
+},{"looper":38}],78:[function(require,module,exports){
 'use strict';
 
 //load websocket library if we are not in the browser
@@ -8870,7 +10158,7 @@ module.exports = function (addr, opts) {
 
 module.exports.connect = module.exports
 
-},{"./duplex":36,"./web-socket":41,"./ws-url":42}],36:[function(require,module,exports){
+},{"./duplex":79,"./web-socket":84,"./ws-url":85}],79:[function(require,module,exports){
 var source = require('./source')
 var sink = require('./sink')
 
@@ -8895,7 +10183,7 @@ function duplex (ws, opts) {
 };
 
 
-},{"./sink":39,"./source":40}],37:[function(require,module,exports){
+},{"./sink":82,"./source":83}],80:[function(require,module,exports){
 
 //normalize a ws url.
 var URL = require('url')
@@ -8993,7 +10281,7 @@ module.exports = function (url, location, protocolMap, defaultProtocol) {
 
 
 
-},{"url":17}],38:[function(require,module,exports){
+},{"url":19}],81:[function(require,module,exports){
 module.exports = function(socket, callback) {
   var remove = socket && (socket.removeEventListener || socket.removeListener);
 
@@ -9026,7 +10314,7 @@ module.exports = function(socket, callback) {
   socket.addEventListener('error', handleErr);
 };
 
-},{}],39:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 (function (process){
 var ready = require('./ready');
 
@@ -9086,7 +10374,7 @@ module.exports = function(socket, opts) {
 
 
 }).call(this,require('_process'))
-},{"./ready":38,"_process":12}],40:[function(require,module,exports){
+},{"./ready":81,"_process":14}],83:[function(require,module,exports){
 /**
   ### `source(socket)`
 
@@ -9165,11 +10453,11 @@ module.exports = function(socket, cb) {
 
 
 
-},{}],41:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 
 module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
 
-},{"ws":5}],42:[function(require,module,exports){
+},{"ws":6}],85:[function(require,module,exports){
 var rurl = require('relative-url')
 var map = {http:'ws', https:'wss'}
 var def = 'ws'
@@ -9179,5 +10467,396 @@ module.exports = function (url, location) {
 
 
 
-},{"relative-url":37}]},{},[1])(1)
+},{"relative-url":80}],86:[function(require,module,exports){
+var pull = require('pull-stream')
+
+var Handshake = require('pull-handshake')
+var State = require('./state')
+
+var challenge_length = 64
+var client_auth_length = 16+32+64
+var server_auth_length = 16+64
+var mac_length = 16
+
+//client is Alice
+//create the client stream with the public key you expect to connect to.
+exports.client =
+exports.createClientStream = function (alice, app_key, timeout) {
+
+  return function (bob_pub, seed, cb) {
+    if('function' == typeof seed)
+      cb = seed, seed = null
+
+    //alice may be null.
+    var state = new State(app_key, alice, bob_pub, seed)
+
+    var stream = Handshake({timeout: timeout}, cb)
+    var shake = stream.handshake
+    delete stream.handshake
+
+    function abort(err, reason) {
+      if(err && err !== true) shake.abort(err, cb)
+      else                    shake.abort(new Error(reason), cb)
+    }
+
+    shake.write(state.createChallenge())
+
+    shake.read(challenge_length, function (err, msg) {
+      if(err) return abort(err, 'challenge not accepted')
+      //create the challenge first, because we need to generate a local key
+      if(!state.verifyChallenge(msg))
+        return abort(null, 'wrong protocol (version?)')
+
+      shake.write(state.createClientAuth())
+
+      shake.read(server_auth_length, function (err, boxed_sig) {
+        if(err) return abort(err, 'hello not accepted')
+
+        if(!state.verifyServerAccept(boxed_sig))
+          return abort(null, 'server not authenticated')
+
+        cb(null, shake.rest(), state.cleanSecrets())
+      })
+    })
+
+    return stream
+  }
+}
+
+//server is Bob.
+exports.server =
+exports.createServerStream = function (bob, authorize, app_key, timeout) {
+
+  return function (cb) {
+    var state = new State(app_key, bob)
+    var stream = Handshake({timeout: timeout}, cb)
+
+    var shake = stream.handshake
+    delete stream.handshake
+
+    function abort (err, reason) {
+      if(err && err !== true) shake.abort(err, cb)
+      else                    shake.abort(new Error(reason), cb)
+    }
+
+    shake.read(challenge_length, function (err, challenge) {
+      if(err) return abort(err, 'expected challenge')
+      if(!state.verifyChallenge(challenge))
+        return shake.abort(new Error('wrong protocol/version'))
+
+      shake.write(state.createChallenge())
+      shake.read(client_auth_length, function (err, hello) {
+        if(err) return abort(err, 'expected hello')
+        if(!state.verifyClientAuth(hello)) {
+          //we know who the client was, but chose not to answer:
+          if(state.remote.public)
+            return abort(null, 'unauthenticated client:' + state.remote.public.toString('hex'), cb)
+          //client dialed wrong number... (we don't know who they where)
+          else
+            return abort(null, 'wrong number')
+        }
+        //check if the user wants to speak to alice.
+        authorize(state.remote.public, function (err, auth) {
+          if(auth == null && !err) err = new Error('client unauthorized')
+          if(!auth) return abort(err, 'client authentication rejected')
+          state.auth = auth
+          shake.write(state.createServerAccept())
+          cb(null, shake.rest(), state.cleanSecrets())
+        })
+      })
+    })
+    return stream
+  }
+}
+
+
+
+
+},{"./state":89,"pull-handshake":41,"pull-stream":46}],87:[function(require,module,exports){
+(function (Buffer){
+var handshake = require('./handshake')
+var secure = require('./secure')
+var cl = require('chloride')
+
+function isBuffer(buf, len) {
+  return Buffer.isBuffer(buf) && buf.length === len
+}
+
+exports.client =
+exports.createClient = function (alice, app_key, timeout) {
+  var create = handshake.client(alice, app_key, timeout)
+
+  return function (bob, seed, cb) {
+    if(!isBuffer(bob, 32))
+      throw new Error('createClient *must* be passed a public key')
+    if('function' === typeof seed)
+      return create(bob, secure(seed))
+    else
+      return create(bob, seed, secure(cb))
+  }
+
+}
+exports.server =
+exports.createServer = function (bob, authorize, app_key, timeout) {
+  var create = handshake.server(bob, authorize, app_key, timeout)
+
+  return function (cb) {
+    return create(secure(cb))
+  }
+
+}
+
+
+
+
+}).call(this,{"isBuffer":require("../browserify/node_modules/insert-module-globals/node_modules/is-buffer/index.js")})
+},{"../browserify/node_modules/insert-module-globals/node_modules/is-buffer/index.js":12,"./handshake":86,"./secure":88,"chloride":23}],88:[function(require,module,exports){
+(function (Buffer){
+var sodium = require('chloride')
+var hash = sodium.crypto_hash_sha256
+var pull = require('pull-stream')
+var boxes = require('pull-box-stream')
+
+var concat = Buffer.concat
+
+module.exports = function (cb) {
+
+  return function (err, stream, state) {
+    if(err) return cb(err)
+
+    var en_key = hash(concat([state.secret, state.remote.public]))
+    var de_key = hash(concat([state.secret, state.local.public]))
+
+    var en_nonce = state.remote.app_mac.slice(0, 24)
+    var de_nonce = state.local.app_mac.slice(0, 24)
+
+    cb(null, {
+      remote: state.remote.public,
+      //on the server, attach any metadata gathered
+      //during `authorize` call
+      auth: state.auth,
+      source: pull(
+        stream.source,
+        boxes.createUnboxStream(de_key, de_nonce)
+      ),
+      sink: pull(
+        boxes.createBoxStream(en_key, en_nonce),
+        stream.sink
+      )
+    })
+  }
+
+}
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":8,"chloride":23,"pull-box-stream":39,"pull-stream":46}],89:[function(require,module,exports){
+(function (Buffer){
+
+var sodium      = require('chloride')
+
+var keypair     = sodium.crypto_box_keypair
+var from_seed   = sodium.crypto_sign_seed_keypair
+var shared      = sodium.crypto_scalarmult
+var hash        = sodium.crypto_hash_sha256
+var sign        = sodium.crypto_sign_detached
+var verify      = sodium.crypto_sign_verify_detached
+var auth        = sodium.crypto_auth
+var verify_auth = sodium.crypto_auth_verify
+var curvify_pk  = sodium.crypto_sign_ed25519_pk_to_curve25519
+var curvify_sk  = sodium.crypto_sign_ed25519_sk_to_curve25519
+var box         = sodium.crypto_secretbox_easy
+var unbox       = sodium.crypto_secretbox_open_easy
+
+var concat = Buffer.concat
+
+var nonce = new Buffer(24); nonce.fill(0)
+
+var challenge_length = 64
+var client_auth_length = 16+32+64
+var server_auth_length = 16+64
+var mac_length = 16
+
+//this is a simple secure handshake,
+//the client public key is passed in plain text,
+
+module.exports = State
+
+function State (app_key, local, remote, seed) {
+
+  if(!(this instanceof State)) return new State(app_key, local, remote, seed)
+
+  if(seed) local = from_seed(seed)
+
+  this.app_key = app_key
+  var kx = keypair()
+  this.local = {
+    kx_pk: kx.publicKey,
+    kx_sk: kx.secretKey,
+    public: local.publicKey,
+    secret: local.secretKey
+  }
+  this.remote = {
+    public: remote || null
+  }
+
+}
+
+var proto = State.prototype
+
+proto.createChallenge =
+function createChallenge () {
+  var state = this
+
+  state.local.app_mac = auth(state.local.kx_pk, state.app_key)
+  return concat([state.local.app_mac, state.local.kx_pk])
+}
+
+proto.verifyChallenge =
+function verifyChallenge (challenge) {
+  var state = this
+
+  var mac = challenge.slice(0, 32)
+  var remote_pk = challenge.slice(32, challenge.length)
+  if(0 !== verify_auth(mac, remote_pk, state.app_key))
+    return null
+
+  state.remote.kx_pk = remote_pk
+  state.remote.app_mac = mac
+  state.secret = shared(state.local.kx_sk, state.remote.kx_pk)
+  state.shash = hash(state.secret)
+
+  return true
+}
+
+
+proto.createClientAuth =
+function createClientAuth () {
+  var state = this
+  //now we have agreed on the secret.
+  //this can be an encryption secret,
+  //or a hmac secret.
+
+  // shared(local.kx, remote.public)
+  var a_bob = shared(state.local.kx_sk, curvify_pk(state.remote.public))
+  state.a_bob = a_bob
+  state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
+
+  var signed = concat([state.app_key, state.remote.public, state.shash])
+  var sig = sign(signed, state.local.secret)
+
+  state.local.hello = Buffer.concat([sig, state.local.public])
+  return box(state.local.hello, nonce, state.secret2)
+}
+
+proto.verifyClientAuth =
+function verifyClientAuth (data) {
+  var state = this
+
+  var a_bob = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
+  state.a_bob = a_bob
+  state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
+
+  state.remote.hello = unbox(data, nonce, state.secret2)
+  if(!state.remote.hello)
+    return null
+
+  var sig = state.remote.hello.slice(0, 64)
+  var public = state.remote.hello.slice(64, client_auth_length)
+
+  var signed = concat([state.app_key, state.local.public, state.shash])
+  if(!verify(sig, signed, public))
+    return null
+
+  state.remote.public = public
+
+  return true
+}
+
+proto.createServerAccept =
+function createServerAccept () {
+  var state = this
+
+  //shared key between my local ephemeral key + remote public
+  var b_alice = shared(state.local.kx_sk, curvify_pk(state.remote.public))
+  state.b_alice = b_alice
+  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
+
+  var signed = concat([state.app_key, state.remote.hello, state.shash])
+  var okay = sign(signed, state.local.secret)
+  return box(okay, nonce, state.secret3)
+}
+
+proto.verifyServerAccept =
+function verifyServerAccept (boxed_okay) {
+  var state = this
+
+  var b_alice = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
+  state.b_alice = b_alice
+//  state.secret3 = hash(concat([state.secret2, b_alice]))
+  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
+
+  var sig = unbox(boxed_okay, nonce, state.secret3)
+  if(!sig) return null
+  var signed = concat([state.app_key, state.local.hello, state.shash])
+  if(!verify(sig, signed, state.remote.public))
+      return null
+  return true
+}
+
+proto.cleanSecrets =
+function cleanSecrets () {
+  var state = this
+
+  // clean away all the secrets for forward security.
+  // use a different secret hash(secret3) in the rest of the session,
+  // and so that a sloppy application cannot compromise the handshake.
+
+  delete state.local.secret
+  state.shash.fill(0)
+  state.secret.fill(0)
+  state.a_bob.fill(0)
+  state.b_alice.fill(0)
+  state.secret = hash(state.secret3)
+  state.secret2.fill(0)
+  state.secret3.fill(0)
+  state.local.kx_sk.fill(0)
+
+  delete state.shash
+  delete state.secret2
+  delete state.secret3
+  delete state.a_bob
+  delete state.b_alice
+  delete state.local.kx_sk
+
+  return state
+}
+
+
+
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":8,"chloride":23}],90:[function(require,module,exports){
+
+module.exports = function split (data, max) {
+
+  if(max <= 0) throw new Error('cannot split into zero (or smaller) length buffers')
+
+  if(data.length <= max)
+    return [data]
+  var out = [], len = 0
+
+  while(len < data.length) {
+    out.push(data.slice(len, Math.min(len + max, data.length)))
+    len += max
+  }
+
+  return out
+}
+
+
+},{}]},{},[1])(1)
 });

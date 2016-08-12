@@ -37,13 +37,17 @@
     "pull-pushable": "^2.0.1",
     "pull-ws": "^3.2.3",
     "stream-to-pull-stream": "1.7.0",
-    "ws": "^1.1.1"
+    "ws": "^1.1.1",
+    "secret-handshake": "^1.0.0"
   },
   "devDependencies": {
     "browserify": "^13.1.0",
     "pull-goodbye": "^0.0.1",
     "pull-serializer": "^0.3.2",
     "pull-stream": "^3.4.3",
+    "pull-abortable":"^4.1.0",
+    "pull-serializer":"^0.3.2",
+    "pull-goodbye":"^0.0.1",
     "tape": "^4.6.0",
     "uglifyjs": "^2.4.10",
     "zuul": "^3.10.3"
