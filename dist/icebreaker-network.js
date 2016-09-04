@@ -65,6 +65,7 @@ module.exports = function connect(s, params, cb) {
           source: connection.source,
           sink: connection.sink,
           auth: connection.auth,
+          protocol:url.protocol,
           address: s
         })
       })
@@ -81,26 +82,31 @@ module.exports = function connect(s, params, cb) {
 
   connect();
 }
-},{"./util":4,"dns":6,"net":6}],3:[function(require,module,exports){
+},{"./util":4,"dns":9,"net":9}],3:[function(require,module,exports){
 (function (Buffer){
-var SHS = require('secret-handshake');
-var util = require('../util');
+'use strict'
+var SHS = require('secret-handshake')
+var util = require('../util')
 
-var _ = typeof icebreaker ==='function'?icebreaker : require('icebreaker');
+var _ = typeof icebreaker ==='function'?icebreaker : require('icebreaker')
 var cl = require('chloride')
 
 module.exports = function (params, cb) {
   params.protocol = params.protocol || 'shs+tcp:'
+    params.encoding  =  params.encoding||'base64' 
+
   var protocol = params.protocol.substring(params.protocol.indexOf('+') + 1)
   if (!util.isString(params.auth)) throw new Error('public key required')
-  var publicKey = util.toBuffer(params.auth);
+
+  var publicKey = util.decode(params.auth,params.encoding)
+
   protocol = params.protocols[protocol] || params.unixProtocols[protocol]
-
-  if (!util.isPlainObject(params.keys) && !util.isString(params.keys.private) && !util.isString(params.keys.public)) throw new Error('private and public keys required')
-
   protocol(params, function (err, connection) {
     if (err) return cb(err, connection)
-    _(connection, SHS.createClient(params.keys, new Buffer(cl.crypto_hash_sha256(new Buffer(params.appKey)), 'base64'))(publicKey, function (err, s) {
+    _(connection, SHS.createClient({
+      publicKey:util.toBuffer(new Buffer(params.keys.publicKey.toString('base64'),'base64')),
+      secretKey:util.toBuffer(new Buffer(params.keys.secretKey,'base64').toString('base64'))},
+      new Buffer(cl.crypto_hash_sha256(new Buffer(params.appKey)), 'base64'))(publicKey, function(err, s) {
       if (err) return cb(err)
       cb(null, util.defaults({ appKey: params.appKey }, util.defaults(s, connection)))
 
@@ -108,7 +114,7 @@ module.exports = function (params, cb) {
   })
 }
 }).call(this,require("buffer").Buffer)
-},{"../util":4,"buffer":8,"chloride":23,"icebreaker":undefined,"secret-handshake":87}],4:[function(require,module,exports){
+},{"../util":4,"buffer":11,"chloride":14,"icebreaker":undefined,"secret-handshake":78}],4:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var URL = require('url')
@@ -116,7 +122,7 @@ var os = require('os')
 var path = require('path')
 var cl = require('chloride')
 var isIPv6 = require('net').isIPv6
-
+var bs58  = require('bs58')
 var util = module.exports = {
 
   isFunction: function (f) {
@@ -148,25 +154,23 @@ var util = module.exports = {
   isWindows: function () {
     return os != null ? os.platform() === 'win32' : false
   },
-
-  toLocalAddress: function (e) {
-    var addr = e.protocol + '//'
-    if (Buffer.isBuffer(e.remote)) addr += encodeURIComponent(e.remote.toString('base64')) + '@'
-    addr += isIPv6(e.localAddress) ? '[' + e.localAddress + ']' : e.localAddress
-    if (e.localPort != null) addr += ':' + e.localPort
-    if (e.appKey != null) addr += '/' + e.appKey
-    return addr
+  encode:function(buf,encoding){
+    if(encoding==='base58') return bs58.encode(buf)
+    return buf.toString(encoding)
+  },
+  decode:function(s,encoding){
+    if(encoding==='base58') return new Buffer(bs58.decode(s))
+    return new Buffer(s,encoding)
   },
 
-  toRemoteAddress: function (e) {
+  toRemoteAddress: function (e,encoding) {
     var addr = e.protocol + '//'
-    if (Buffer.isBuffer(e.remote)) addr += encodeURIComponent(e.remote.toString('base64')) + '@'
+    if (Buffer.isBuffer(e.remote)) addr += encodeURIComponent(util.encode(e.remote,encoding||'base64')) + '@'
     addr += isIPv6(e.remoteAddress) ? '[' + e.remoteAddress + ']' : e.remoteAddress
     if (e.remotePort != null) addr += ':' + e.remotePort
     if (e.appKey != null) addr += '/' + e.appKey
     return addr
   },
-
   parseUrl: function (s, d) {
     if (s.trim().indexOf('://') == -1) {
       s = d + '//' || 'tcp://' + s
@@ -180,7 +184,6 @@ var util = module.exports = {
         url.query[k] = false
       }
     }
-
     var isWindows = util.isWindows;
 
     if (url.protocol.indexOf('+unix') !== -1) {
@@ -203,13 +206,10 @@ var util = module.exports = {
   }
 }
 }).call(this,require("buffer").Buffer)
-},{"buffer":8,"chloride":23,"lodash.defaults":32,"net":6,"os":6,"path":13,"url":19}],5:[function(require,module,exports){
+},{"bs58":10,"buffer":11,"chloride":14,"lodash.defaults":21,"net":9,"os":9,"path":24,"url":87}],5:[function(require,module,exports){
 'use strict'
-
-var Net = require('net')
 var pick = require('lodash.pick')
 var url = require('url')
-var util = require('../util')
 var connect = require('pull-ws/client')
 
 module.exports = function (params, cb) {
@@ -236,11 +236,217 @@ module.exports = function (params, cb) {
     }
   })
 }
-},{"../util":4,"lodash.pick":35,"net":6,"pull-ws/client":78,"url":19}],6:[function(require,module,exports){
+},{"lodash.pick":22,"pull-ws/client":65,"url":87}],6:[function(require,module,exports){
+// base-x encoding
+// Forked from https://github.com/cryptocoinjs/bs58
+// Originally written by Mike Hearn for BitcoinJ
+// Copyright (c) 2011 Google Inc
+// Ported to JavaScript by Stefan Thomas
+// Merged Buffer refactorings from base58-native by Stephen Pair
+// Copyright (c) 2013 BitPay Inc
+
+module.exports = function base (ALPHABET) {
+  var ALPHABET_MAP = {}
+  var BASE = ALPHABET.length
+  var LEADER = ALPHABET.charAt(0)
+
+  // pre-compute lookup table
+  for (var i = 0; i < ALPHABET.length; i++) {
+    ALPHABET_MAP[ALPHABET.charAt(i)] = i
+  }
+
+  function encode (source) {
+    if (source.length === 0) return ''
+
+    var digits = [0]
+    for (var i = 0; i < source.length; ++i) {
+      for (var j = 0, carry = source[i]; j < digits.length; ++j) {
+        carry += digits[j] << 8
+        digits[j] = carry % BASE
+        carry = (carry / BASE) | 0
+      }
+
+      while (carry > 0) {
+        digits.push(carry % BASE)
+        carry = (carry / BASE) | 0
+      }
+    }
+
+    // deal with leading zeros
+    for (var k = 0; source[k] === 0 && k < source.length - 1; ++k) {
+      digits.push(0)
+    }
+
+    // convert digits to a string
+    for (var ii = 0, jj = digits.length - 1; ii <= jj; ++ii, --jj) {
+      var tmp = ALPHABET[digits[ii]]
+      digits[ii] = ALPHABET[digits[jj]]
+      digits[jj] = tmp
+    }
+
+    return digits.join('')
+  }
+
+  function decode (string) {
+    if (string.length === 0) return []
+
+    var bytes = [0]
+    for (var i = 0; i < string.length; i++) {
+      var value = ALPHABET_MAP[string[i]]
+      if (value === undefined) throw new Error('Non-base' + BASE + ' character')
+
+      for (var j = 0, carry = value; j < bytes.length; ++j) {
+        carry += bytes[j] * BASE
+        bytes[j] = carry & 0xff
+        carry >>= 8
+      }
+
+      while (carry > 0) {
+        bytes.push(carry & 0xff)
+        carry >>= 8
+      }
+    }
+
+    // deal with leading zeros
+    for (var k = 0; string[k] === LEADER && k < string.length - 1; ++k) {
+      bytes.push(0)
+    }
+
+    return bytes.reverse()
+  }
+
+  return {
+    encode: encode,
+    decode: decode
+  }
+}
 
 },{}],7:[function(require,module,exports){
-arguments[4][6][0].apply(exports,arguments)
-},{"dup":6}],8:[function(require,module,exports){
+'use strict'
+
+exports.toByteArray = toByteArray
+exports.fromByteArray = fromByteArray
+
+var lookup = []
+var revLookup = []
+var Arr = typeof Uint8Array !== 'undefined' ? Uint8Array : Array
+
+function init () {
+  var code = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+  for (var i = 0, len = code.length; i < len; ++i) {
+    lookup[i] = code[i]
+    revLookup[code.charCodeAt(i)] = i
+  }
+
+  revLookup['-'.charCodeAt(0)] = 62
+  revLookup['_'.charCodeAt(0)] = 63
+}
+
+init()
+
+function toByteArray (b64) {
+  var i, j, l, tmp, placeHolders, arr
+  var len = b64.length
+
+  if (len % 4 > 0) {
+    throw new Error('Invalid string. Length must be a multiple of 4')
+  }
+
+  // the number of equal signs (place holders)
+  // if there are two placeholders, than the two characters before it
+  // represent one byte
+  // if there is only one, then the three characters before it represent 2 bytes
+  // this is just a cheap hack to not do indexOf twice
+  placeHolders = b64[len - 2] === '=' ? 2 : b64[len - 1] === '=' ? 1 : 0
+
+  // base64 is 4/3 + up to two characters of the original data
+  arr = new Arr(len * 3 / 4 - placeHolders)
+
+  // if there are placeholders, only get up to the last complete 4 chars
+  l = placeHolders > 0 ? len - 4 : len
+
+  var L = 0
+
+  for (i = 0, j = 0; i < l; i += 4, j += 3) {
+    tmp = (revLookup[b64.charCodeAt(i)] << 18) | (revLookup[b64.charCodeAt(i + 1)] << 12) | (revLookup[b64.charCodeAt(i + 2)] << 6) | revLookup[b64.charCodeAt(i + 3)]
+    arr[L++] = (tmp >> 16) & 0xFF
+    arr[L++] = (tmp >> 8) & 0xFF
+    arr[L++] = tmp & 0xFF
+  }
+
+  if (placeHolders === 2) {
+    tmp = (revLookup[b64.charCodeAt(i)] << 2) | (revLookup[b64.charCodeAt(i + 1)] >> 4)
+    arr[L++] = tmp & 0xFF
+  } else if (placeHolders === 1) {
+    tmp = (revLookup[b64.charCodeAt(i)] << 10) | (revLookup[b64.charCodeAt(i + 1)] << 4) | (revLookup[b64.charCodeAt(i + 2)] >> 2)
+    arr[L++] = (tmp >> 8) & 0xFF
+    arr[L++] = tmp & 0xFF
+  }
+
+  return arr
+}
+
+function tripletToBase64 (num) {
+  return lookup[num >> 18 & 0x3F] + lookup[num >> 12 & 0x3F] + lookup[num >> 6 & 0x3F] + lookup[num & 0x3F]
+}
+
+function encodeChunk (uint8, start, end) {
+  var tmp
+  var output = []
+  for (var i = start; i < end; i += 3) {
+    tmp = (uint8[i] << 16) + (uint8[i + 1] << 8) + (uint8[i + 2])
+    output.push(tripletToBase64(tmp))
+  }
+  return output.join('')
+}
+
+function fromByteArray (uint8) {
+  var tmp
+  var len = uint8.length
+  var extraBytes = len % 3 // if we have 1 byte left, pad 2 bytes
+  var output = ''
+  var parts = []
+  var maxChunkLength = 16383 // must be multiple of 3
+
+  // go through the array every three bytes, we'll deal with trailing stuff later
+  for (var i = 0, len2 = len - extraBytes; i < len2; i += maxChunkLength) {
+    parts.push(encodeChunk(uint8, i, (i + maxChunkLength) > len2 ? len2 : (i + maxChunkLength)))
+  }
+
+  // pad the end with zeros, but make sure to not forget the extra bytes
+  if (extraBytes === 1) {
+    tmp = uint8[len - 1]
+    output += lookup[tmp >> 2]
+    output += lookup[(tmp << 4) & 0x3F]
+    output += '=='
+  } else if (extraBytes === 2) {
+    tmp = (uint8[len - 2] << 8) + (uint8[len - 1])
+    output += lookup[tmp >> 10]
+    output += lookup[(tmp >> 4) & 0x3F]
+    output += lookup[(tmp << 2) & 0x3F]
+    output += '='
+  }
+
+  parts.push(output)
+
+  return parts.join('')
+}
+
+},{}],8:[function(require,module,exports){
+
+},{}],9:[function(require,module,exports){
+arguments[4][8][0].apply(exports,arguments)
+},{"dup":8}],10:[function(require,module,exports){
+var basex = require('base-x')
+var ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+var base58 = basex(ALPHABET)
+
+module.exports = {
+  encode: base58.encode,
+  decode: base58.decode
+}
+
+},{"base-x":6}],11:[function(require,module,exports){
 (function (global){
 /*!
  * The buffer module from node.js, for the browser.
@@ -296,7 +502,7 @@ exports.kMaxLength = kMaxLength()
 function typedArraySupport () {
   try {
     var arr = new Uint8Array(1)
-    arr.foo = function () { return 42 }
+    arr.__proto__ = {__proto__: Uint8Array.prototype, foo: function () { return 42 }}
     return arr.foo() === 42 && // typed array instances can be augmented
         typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
         arr.subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
@@ -409,6 +615,8 @@ if (Buffer.TYPED_ARRAY_SUPPORT) {
 function assertSize (size) {
   if (typeof size !== 'number') {
     throw new TypeError('"size" argument must be a number')
+  } else if (size < 0) {
+    throw new RangeError('"size" argument must not be negative')
   }
 }
 
@@ -440,7 +648,7 @@ function allocUnsafe (that, size) {
   assertSize(size)
   that = createBuffer(that, size < 0 ? 0 : checked(size) | 0)
   if (!Buffer.TYPED_ARRAY_SUPPORT) {
-    for (var i = 0; i < size; i++) {
+    for (var i = 0; i < size; ++i) {
       that[i] = 0
     }
   }
@@ -472,12 +680,20 @@ function fromString (that, string, encoding) {
   var length = byteLength(string, encoding) | 0
   that = createBuffer(that, length)
 
-  that.write(string, encoding)
+  var actual = that.write(string, encoding)
+
+  if (actual !== length) {
+    // Writing a hex string, for example, that contains invalid characters will
+    // cause everything after the first invalid character to be ignored. (e.g.
+    // 'abxxcd' will be treated as 'ab')
+    that = that.slice(0, actual)
+  }
+
   return that
 }
 
 function fromArrayLike (that, array) {
-  var length = checked(array.length) | 0
+  var length = array.length < 0 ? 0 : checked(array.length) | 0
   that = createBuffer(that, length)
   for (var i = 0; i < length; i += 1) {
     that[i] = array[i] & 255
@@ -496,7 +712,9 @@ function fromArrayBuffer (that, array, byteOffset, length) {
     throw new RangeError('\'length\' is out of bounds')
   }
 
-  if (length === undefined) {
+  if (byteOffset === undefined && length === undefined) {
+    array = new Uint8Array(array)
+  } else if (length === undefined) {
     array = new Uint8Array(array, byteOffset)
   } else {
     array = new Uint8Array(array, byteOffset, length)
@@ -544,7 +762,7 @@ function fromObject (that, obj) {
 }
 
 function checked (length) {
-  // Note: cannot use `length < kMaxLength` here because that fails when
+  // Note: cannot use `length < kMaxLength()` here because that fails when
   // length is NaN (which is otherwise coerced to zero.)
   if (length >= kMaxLength()) {
     throw new RangeError('Attempt to allocate Buffer larger than maximum ' +
@@ -593,9 +811,9 @@ Buffer.isEncoding = function isEncoding (encoding) {
     case 'utf8':
     case 'utf-8':
     case 'ascii':
+    case 'latin1':
     case 'binary':
     case 'base64':
-    case 'raw':
     case 'ucs2':
     case 'ucs-2':
     case 'utf16le':
@@ -618,14 +836,14 @@ Buffer.concat = function concat (list, length) {
   var i
   if (length === undefined) {
     length = 0
-    for (i = 0; i < list.length; i++) {
+    for (i = 0; i < list.length; ++i) {
       length += list[i].length
     }
   }
 
   var buffer = Buffer.allocUnsafe(length)
   var pos = 0
-  for (i = 0; i < list.length; i++) {
+  for (i = 0; i < list.length; ++i) {
     var buf = list[i]
     if (!Buffer.isBuffer(buf)) {
       throw new TypeError('"list" argument must be an Array of Buffers')
@@ -656,10 +874,8 @@ function byteLength (string, encoding) {
   for (;;) {
     switch (encoding) {
       case 'ascii':
+      case 'latin1':
       case 'binary':
-      // Deprecated
-      case 'raw':
-      case 'raws':
         return len
       case 'utf8':
       case 'utf-8':
@@ -732,8 +948,9 @@ function slowToString (encoding, start, end) {
       case 'ascii':
         return asciiSlice(this, start, end)
 
+      case 'latin1':
       case 'binary':
-        return binarySlice(this, start, end)
+        return latin1Slice(this, start, end)
 
       case 'base64':
         return base64Slice(this, start, end)
@@ -781,6 +998,20 @@ Buffer.prototype.swap32 = function swap32 () {
   for (var i = 0; i < len; i += 4) {
     swap(this, i, i + 3)
     swap(this, i + 1, i + 2)
+  }
+  return this
+}
+
+Buffer.prototype.swap64 = function swap64 () {
+  var len = this.length
+  if (len % 8 !== 0) {
+    throw new RangeError('Buffer size must be a multiple of 64-bits')
+  }
+  for (var i = 0; i < len; i += 8) {
+    swap(this, i, i + 7)
+    swap(this, i + 1, i + 6)
+    swap(this, i + 2, i + 5)
+    swap(this, i + 3, i + 4)
   }
   return this
 }
@@ -867,7 +1098,73 @@ Buffer.prototype.compare = function compare (target, start, end, thisStart, this
   return 0
 }
 
-function arrayIndexOf (arr, val, byteOffset, encoding) {
+// Finds either the first index of `val` in `buffer` at offset >= `byteOffset`,
+// OR the last index of `val` in `buffer` at offset <= `byteOffset`.
+//
+// Arguments:
+// - buffer - a Buffer to search
+// - val - a string, Buffer, or number
+// - byteOffset - an index into `buffer`; will be clamped to an int32
+// - encoding - an optional encoding, relevant is val is a string
+// - dir - true for indexOf, false for lastIndexOf
+function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
+  // Empty buffer means no match
+  if (buffer.length === 0) return -1
+
+  // Normalize byteOffset
+  if (typeof byteOffset === 'string') {
+    encoding = byteOffset
+    byteOffset = 0
+  } else if (byteOffset > 0x7fffffff) {
+    byteOffset = 0x7fffffff
+  } else if (byteOffset < -0x80000000) {
+    byteOffset = -0x80000000
+  }
+  byteOffset = +byteOffset  // Coerce to Number.
+  if (isNaN(byteOffset)) {
+    // byteOffset: it it's undefined, null, NaN, "foo", etc, search whole buffer
+    byteOffset = dir ? 0 : (buffer.length - 1)
+  }
+
+  // Normalize byteOffset: negative offsets start from the end of the buffer
+  if (byteOffset < 0) byteOffset = buffer.length + byteOffset
+  if (byteOffset >= buffer.length) {
+    if (dir) return -1
+    else byteOffset = buffer.length - 1
+  } else if (byteOffset < 0) {
+    if (dir) byteOffset = 0
+    else return -1
+  }
+
+  // Normalize val
+  if (typeof val === 'string') {
+    val = Buffer.from(val, encoding)
+  }
+
+  // Finally, search either indexOf (if dir is true) or lastIndexOf
+  if (Buffer.isBuffer(val)) {
+    // Special case: looking for empty string/buffer always fails
+    if (val.length === 0) {
+      return -1
+    }
+    return arrayIndexOf(buffer, val, byteOffset, encoding, dir)
+  } else if (typeof val === 'number') {
+    val = val & 0xFF // Search for a byte value [0-255]
+    if (Buffer.TYPED_ARRAY_SUPPORT &&
+        typeof Uint8Array.prototype.indexOf === 'function') {
+      if (dir) {
+        return Uint8Array.prototype.indexOf.call(buffer, val, byteOffset)
+      } else {
+        return Uint8Array.prototype.lastIndexOf.call(buffer, val, byteOffset)
+      }
+    }
+    return arrayIndexOf(buffer, [ val ], byteOffset, encoding, dir)
+  }
+
+  throw new TypeError('val must be string, number or Buffer')
+}
+
+function arrayIndexOf (arr, val, byteOffset, encoding, dir) {
   var indexSize = 1
   var arrLength = arr.length
   var valLength = val.length
@@ -894,59 +1191,45 @@ function arrayIndexOf (arr, val, byteOffset, encoding) {
     }
   }
 
-  var foundIndex = -1
-  for (var i = 0; byteOffset + i < arrLength; i++) {
-    if (read(arr, byteOffset + i) === read(val, foundIndex === -1 ? 0 : i - foundIndex)) {
-      if (foundIndex === -1) foundIndex = i
-      if (i - foundIndex + 1 === valLength) return (byteOffset + foundIndex) * indexSize
-    } else {
-      if (foundIndex !== -1) i -= i - foundIndex
-      foundIndex = -1
+  var i
+  if (dir) {
+    var foundIndex = -1
+    for (i = byteOffset; i < arrLength; i++) {
+      if (read(arr, i) === read(val, foundIndex === -1 ? 0 : i - foundIndex)) {
+        if (foundIndex === -1) foundIndex = i
+        if (i - foundIndex + 1 === valLength) return foundIndex * indexSize
+      } else {
+        if (foundIndex !== -1) i -= i - foundIndex
+        foundIndex = -1
+      }
+    }
+  } else {
+    if (byteOffset + valLength > arrLength) byteOffset = arrLength - valLength
+    for (i = byteOffset; i >= 0; i--) {
+      var found = true
+      for (var j = 0; j < valLength; j++) {
+        if (read(arr, i + j) !== read(val, j)) {
+          found = false
+          break
+        }
+      }
+      if (found) return i
     }
   }
+
   return -1
-}
-
-Buffer.prototype.indexOf = function indexOf (val, byteOffset, encoding) {
-  if (typeof byteOffset === 'string') {
-    encoding = byteOffset
-    byteOffset = 0
-  } else if (byteOffset > 0x7fffffff) {
-    byteOffset = 0x7fffffff
-  } else if (byteOffset < -0x80000000) {
-    byteOffset = -0x80000000
-  }
-  byteOffset >>= 0
-
-  if (this.length === 0) return -1
-  if (byteOffset >= this.length) return -1
-
-  // Negative offsets start from the end of the buffer
-  if (byteOffset < 0) byteOffset = Math.max(this.length + byteOffset, 0)
-
-  if (typeof val === 'string') {
-    val = Buffer.from(val, encoding)
-  }
-
-  if (Buffer.isBuffer(val)) {
-    // special case: looking for empty string/buffer always fails
-    if (val.length === 0) {
-      return -1
-    }
-    return arrayIndexOf(this, val, byteOffset, encoding)
-  }
-  if (typeof val === 'number') {
-    if (Buffer.TYPED_ARRAY_SUPPORT && Uint8Array.prototype.indexOf === 'function') {
-      return Uint8Array.prototype.indexOf.call(this, val, byteOffset)
-    }
-    return arrayIndexOf(this, [ val ], byteOffset, encoding)
-  }
-
-  throw new TypeError('val must be string, number or Buffer')
 }
 
 Buffer.prototype.includes = function includes (val, byteOffset, encoding) {
   return this.indexOf(val, byteOffset, encoding) !== -1
+}
+
+Buffer.prototype.indexOf = function indexOf (val, byteOffset, encoding) {
+  return bidirectionalIndexOf(this, val, byteOffset, encoding, true)
+}
+
+Buffer.prototype.lastIndexOf = function lastIndexOf (val, byteOffset, encoding) {
+  return bidirectionalIndexOf(this, val, byteOffset, encoding, false)
 }
 
 function hexWrite (buf, string, offset, length) {
@@ -963,12 +1246,12 @@ function hexWrite (buf, string, offset, length) {
 
   // must be an even number of digits
   var strLen = string.length
-  if (strLen % 2 !== 0) throw new Error('Invalid hex string')
+  if (strLen % 2 !== 0) throw new TypeError('Invalid hex string')
 
   if (length > strLen / 2) {
     length = strLen / 2
   }
-  for (var i = 0; i < length; i++) {
+  for (var i = 0; i < length; ++i) {
     var parsed = parseInt(string.substr(i * 2, 2), 16)
     if (isNaN(parsed)) return i
     buf[offset + i] = parsed
@@ -984,7 +1267,7 @@ function asciiWrite (buf, string, offset, length) {
   return blitBuffer(asciiToBytes(string), buf, offset, length)
 }
 
-function binaryWrite (buf, string, offset, length) {
+function latin1Write (buf, string, offset, length) {
   return asciiWrite(buf, string, offset, length)
 }
 
@@ -1046,8 +1329,9 @@ Buffer.prototype.write = function write (string, offset, length, encoding) {
       case 'ascii':
         return asciiWrite(this, string, offset, length)
 
+      case 'latin1':
       case 'binary':
-        return binaryWrite(this, string, offset, length)
+        return latin1Write(this, string, offset, length)
 
       case 'base64':
         // Warning: maxLength not taken into account in base64Write
@@ -1182,17 +1466,17 @@ function asciiSlice (buf, start, end) {
   var ret = ''
   end = Math.min(buf.length, end)
 
-  for (var i = start; i < end; i++) {
+  for (var i = start; i < end; ++i) {
     ret += String.fromCharCode(buf[i] & 0x7F)
   }
   return ret
 }
 
-function binarySlice (buf, start, end) {
+function latin1Slice (buf, start, end) {
   var ret = ''
   end = Math.min(buf.length, end)
 
-  for (var i = start; i < end; i++) {
+  for (var i = start; i < end; ++i) {
     ret += String.fromCharCode(buf[i])
   }
   return ret
@@ -1205,7 +1489,7 @@ function hexSlice (buf, start, end) {
   if (!end || end < 0 || end > len) end = len
 
   var out = ''
-  for (var i = start; i < end; i++) {
+  for (var i = start; i < end; ++i) {
     out += toHex(buf[i])
   }
   return out
@@ -1248,7 +1532,7 @@ Buffer.prototype.slice = function slice (start, end) {
   } else {
     var sliceLen = end - start
     newBuf = new Buffer(sliceLen, undefined)
-    for (var i = 0; i < sliceLen; i++) {
+    for (var i = 0; i < sliceLen; ++i) {
       newBuf[i] = this[i + start]
     }
   }
@@ -1475,7 +1759,7 @@ Buffer.prototype.writeUInt8 = function writeUInt8 (value, offset, noAssert) {
 
 function objectWriteUInt16 (buf, value, offset, littleEndian) {
   if (value < 0) value = 0xffff + value + 1
-  for (var i = 0, j = Math.min(buf.length - offset, 2); i < j; i++) {
+  for (var i = 0, j = Math.min(buf.length - offset, 2); i < j; ++i) {
     buf[offset + i] = (value & (0xff << (8 * (littleEndian ? i : 1 - i)))) >>>
       (littleEndian ? i : 1 - i) * 8
   }
@@ -1509,7 +1793,7 @@ Buffer.prototype.writeUInt16BE = function writeUInt16BE (value, offset, noAssert
 
 function objectWriteUInt32 (buf, value, offset, littleEndian) {
   if (value < 0) value = 0xffffffff + value + 1
-  for (var i = 0, j = Math.min(buf.length - offset, 4); i < j; i++) {
+  for (var i = 0, j = Math.min(buf.length - offset, 4); i < j; ++i) {
     buf[offset + i] = (value >>> (littleEndian ? i : 3 - i) * 8) & 0xff
   }
 }
@@ -1724,12 +2008,12 @@ Buffer.prototype.copy = function copy (target, targetStart, start, end) {
 
   if (this === target && start < targetStart && targetStart < end) {
     // descending copy from end
-    for (i = len - 1; i >= 0; i--) {
+    for (i = len - 1; i >= 0; --i) {
       target[i + targetStart] = this[i + start]
     }
   } else if (len < 1000 || !Buffer.TYPED_ARRAY_SUPPORT) {
     // ascending copy from start
-    for (i = 0; i < len; i++) {
+    for (i = 0; i < len; ++i) {
       target[i + targetStart] = this[i + start]
     }
   } else {
@@ -1790,7 +2074,7 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
 
   var i
   if (typeof val === 'number') {
-    for (i = start; i < end; i++) {
+    for (i = start; i < end; ++i) {
       this[i] = val
     }
   } else {
@@ -1798,7 +2082,7 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
       ? val
       : utf8ToBytes(new Buffer(val, encoding).toString())
     var len = bytes.length
-    for (i = 0; i < end - start; i++) {
+    for (i = 0; i < end - start; ++i) {
       this[i + start] = bytes[i % len]
     }
   }
@@ -1840,7 +2124,7 @@ function utf8ToBytes (string, units) {
   var leadSurrogate = null
   var bytes = []
 
-  for (var i = 0; i < length; i++) {
+  for (var i = 0; i < length; ++i) {
     codePoint = string.charCodeAt(i)
 
     // is surrogate component
@@ -1915,7 +2199,7 @@ function utf8ToBytes (string, units) {
 
 function asciiToBytes (str) {
   var byteArray = []
-  for (var i = 0; i < str.length; i++) {
+  for (var i = 0; i < str.length; ++i) {
     // Node's code seems to be doing this and not & 0x7F..
     byteArray.push(str.charCodeAt(i) & 0xFF)
   }
@@ -1925,7 +2209,7 @@ function asciiToBytes (str) {
 function utf16leToBytes (str, units) {
   var c, hi, lo
   var byteArray = []
-  for (var i = 0; i < str.length; i++) {
+  for (var i = 0; i < str.length; ++i) {
     if ((units -= 2) < 0) break
 
     c = str.charCodeAt(i)
@@ -1943,7 +2227,7 @@ function base64ToBytes (str) {
 }
 
 function blitBuffer (src, dst, offset, length) {
-  for (var i = 0; i < length; i++) {
+  for (var i = 0; i < length; ++i) {
     if ((i + offset >= dst.length) || (i >= src.length)) break
     dst[i + offset] = src[i]
   }
@@ -1955,118 +2239,229 @@ function isnan (val) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":9,"ieee754":10,"isarray":11}],9:[function(require,module,exports){
-'use strict'
+},{"base64-js":7,"ieee754":16,"isarray":20}],12:[function(require,module,exports){
+var _require = require //fool browserify
+module.exports = _require('sodium-prebuilt/build/Release/sodium')
 
-exports.toByteArray = toByteArray
-exports.fromByteArray = fromByteArray
+},{}],13:[function(require,module,exports){
 
-var lookup = []
-var revLookup = []
-var Arr = typeof Uint8Array !== 'undefined' ? Uint8Array : Array
+module.exports = require('sodium-browserify-tweetnacl')
 
-function init () {
-  var code = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-  for (var i = 0, len = code.length; i < len; ++i) {
-    lookup[i] = code[i]
-    revLookup[code.charCodeAt(i)] = i
-  }
+},{"sodium-browserify-tweetnacl":83}],14:[function(require,module,exports){
+(function (process,Buffer){
 
-  revLookup['-'.charCodeAt(0)] = 62
-  revLookup['_'.charCodeAt(0)] = 63
+if(process.env.CHLORIDE_JS)
+  return module.exports = require('./browser-small')
+
+function isElectron () {
+  try {
+    require('electron')
+    return true
+  } catch (_) { return false }
 }
 
-init()
+try {
+  var cl = module.exports = require('./bindings')
 
-function toByteArray (b64) {
-  var i, j, l, tmp, placeHolders, arr
-  var len = b64.length
+  if(isElectron()) {
+    //there is a weird problem with electro.
+    //where detached signatures do not work, but other
+    //signatures do...
 
-  if (len % 4 > 0) {
-    throw new Error('Invalid string. Length must be a multiple of 4')
+    var keys = cl.crypto_sign_keypair()
+    var msg = cl.crypto_hash(new Buffer('test signature'))
+    var sig = cl.crypto_sign_detached(msg, keys.secretKey)
+
+    if(cl.crypto_sign_verify_detached(sig, msg, keys.publicKey))
+      return
+
+    console.error('detached signatures broken in electron, using workaround')
+
+    var verify = module.exports.crypto_sign_verify_detached
+    module.exports.crypto_sign_verify_detached = function (sig, msg, pk) {
+      //return verify(copy(sig), copy(msg), copy(pk))
+      return module.exports.crypto_sign_open(Buffer.concat([sig, msg]), pk)
+      //console.log(sig, msg, pk)
+//      return verify(new Buffer(sig), new Buffer(msg), new Buffer(pk))
+    }
   }
-
-  // the number of equal signs (place holders)
-  // if there are two placeholders, than the two characters before it
-  // represent one byte
-  // if there is only one, then the three characters before it represent 2 bytes
-  // this is just a cheap hack to not do indexOf twice
-  placeHolders = b64[len - 2] === '=' ? 2 : b64[len - 1] === '=' ? 1 : 0
-
-  // base64 is 4/3 + up to two characters of the original data
-  arr = new Arr(len * 3 / 4 - placeHolders)
-
-  // if there are placeholders, only get up to the last complete 4 chars
-  l = placeHolders > 0 ? len - 4 : len
-
-  var L = 0
-
-  for (i = 0, j = 0; i < l; i += 4, j += 3) {
-    tmp = (revLookup[b64.charCodeAt(i)] << 18) | (revLookup[b64.charCodeAt(i + 1)] << 12) | (revLookup[b64.charCodeAt(i + 2)] << 6) | revLookup[b64.charCodeAt(i + 3)]
-    arr[L++] = (tmp >> 16) & 0xFF
-    arr[L++] = (tmp >> 8) & 0xFF
-    arr[L++] = tmp & 0xFF
-  }
-
-  if (placeHolders === 2) {
-    tmp = (revLookup[b64.charCodeAt(i)] << 2) | (revLookup[b64.charCodeAt(i + 1)] >> 4)
-    arr[L++] = tmp & 0xFF
-  } else if (placeHolders === 1) {
-    tmp = (revLookup[b64.charCodeAt(i)] << 10) | (revLookup[b64.charCodeAt(i + 1)] << 4) | (revLookup[b64.charCodeAt(i + 2)] >> 2)
-    arr[L++] = (tmp >> 8) & 0xFF
-    arr[L++] = tmp & 0xFF
-  }
-
-  return arr
+} catch (err) {
+  console.error('error loading sodium bindings:', err.message)
+  console.error('falling back to javascript version.')
+  module.exports = require('./browser-small')
 }
 
-function tripletToBase64 (num) {
-  return lookup[num >> 18 & 0x3F] + lookup[num >> 12 & 0x3F] + lookup[num >> 6 & 0x3F] + lookup[num & 0x3F]
-}
 
-function encodeChunk (uint8, start, end) {
-  var tmp
-  var output = []
-  for (var i = start; i < end; i += 3) {
-    tmp = (uint8[i] << 16) + (uint8[i + 1] << 8) + (uint8[i + 2])
-    output.push(tripletToBase64(tmp))
-  }
-  return output.join('')
-}
+}).call(this,require('_process'),require("buffer").Buffer)
+},{"./bindings":12,"./browser-small":13,"_process":25,"buffer":11,"electron":8}],15:[function(require,module,exports){
+/*
+ * ed2curve: convert Ed25519 signing key pair into Curve25519
+ * key pair suitable for Diffie-Hellman key exchange.
+ *
+ * Written by Dmitry Chestnykh in 2014. Public domain.
+ */
+/* jshint newcap: false */
+(function(root, f) {
+  'use strict';
+  if (typeof module !== 'undefined' && module.exports) module.exports = f(require('tweetnacl/nacl-fast'));
+  else root.ed2curve = f(root.nacl);
+}(this, function(nacl) {
+  'use strict';
+  if (!nacl) throw new Error('tweetnacl not loaded');
 
-function fromByteArray (uint8) {
-  var tmp
-  var len = uint8.length
-  var extraBytes = len % 3 // if we have 1 byte left, pad 2 bytes
-  var output = ''
-  var parts = []
-  var maxChunkLength = 16383 // must be multiple of 3
+  // -- Operations copied from TweetNaCl.js. --
 
-  // go through the array every three bytes, we'll deal with trailing stuff later
-  for (var i = 0, len2 = len - extraBytes; i < len2; i += maxChunkLength) {
-    parts.push(encodeChunk(uint8, i, (i + maxChunkLength) > len2 ? len2 : (i + maxChunkLength)))
-  }
+  var gf = function(init) {
+    var i, r = new Float64Array(16);
+    if (init) for (i = 0; i < init.length; i++) r[i] = init[i];
+    return r;
+  };
 
-  // pad the end with zeros, but make sure to not forget the extra bytes
-  if (extraBytes === 1) {
-    tmp = uint8[len - 1]
-    output += lookup[tmp >> 2]
-    output += lookup[(tmp << 4) & 0x3F]
-    output += '=='
-  } else if (extraBytes === 2) {
-    tmp = (uint8[len - 2] << 8) + (uint8[len - 1])
-    output += lookup[tmp >> 10]
-    output += lookup[(tmp >> 4) & 0x3F]
-    output += lookup[(tmp << 2) & 0x3F]
-    output += '='
+  var gf1 = gf([1]);
+
+  function car25519(o) {
+    var c;
+    var i;
+    for (i = 0; i < 16; i++) {
+      o[i] += 65536;
+      c = Math.floor(o[i] / 65536);
+      o[(i+1)*(i<15?1:0)] += c - 1 + 37 * (c-1) * (i===15?1:0);
+      o[i] -= (c * 65536);
+    }
   }
 
-  parts.push(output)
+  function sel25519(p, q, b) {
+    var t, c = ~(b-1);
+    for (var i = 0; i < 16; i++) {
+      t = c & (p[i] ^ q[i]);
+      p[i] ^= t;
+      q[i] ^= t;
+    }
+  }
 
-  return parts.join('')
-}
+  function unpack25519(o, n) {
+    var i;
+    for (i = 0; i < 16; i++) o[i] = n[2*i] + (n[2*i+1] << 8);
+    o[15] &= 0x7fff;
+  }
 
-},{}],10:[function(require,module,exports){
+  // addition
+  function A(o, a, b) {
+    var i;
+    for (i = 0; i < 16; i++) o[i] = (a[i] + b[i])|0;
+  }
+
+  // subtraction
+  function Z(o, a, b) {
+    var i;
+    for (i = 0; i < 16; i++) o[i] = (a[i] - b[i])|0;
+  }
+
+  // multiplication
+  function M(o, a, b) {
+    var i, j, t = new Float64Array(31);
+    for (i = 0; i < 31; i++) t[i] = 0;
+    for (i = 0; i < 16; i++) {
+      for (j = 0; j < 16; j++) {
+        t[i+j] += a[i] * b[j];
+      }
+    }
+    for (i = 0; i < 15; i++) {
+      t[i] += 38 * t[i+16];
+    }
+    for (i = 0; i < 16; i++) o[i] = t[i];
+    car25519(o);
+    car25519(o);
+  }
+
+  // squaring
+  function S(o, a) {
+    M(o, a, a);
+  }
+
+  // inversion
+  function inv25519(o, i) {
+    var c = gf();
+    var a;
+    for (a = 0; a < 16; a++) c[a] = i[a];
+    for (a = 253; a >= 0; a--) {
+      S(c, c);
+      if(a !== 2 && a !== 4) M(c, c, i);
+    }
+    for (a = 0; a < 16; a++) o[a] = c[a];
+  }
+
+  function pack25519(o, n) {
+    var i, j, b;
+    var m = gf(), t = gf();
+    for (i = 0; i < 16; i++) t[i] = n[i];
+    car25519(t);
+    car25519(t);
+    car25519(t);
+    for (j = 0; j < 2; j++) {
+      m[0] = t[0] - 0xffed;
+      for (i = 1; i < 15; i++) {
+        m[i] = t[i] - 0xffff - ((m[i-1]>>16) & 1);
+        m[i-1] &= 0xffff;
+      }
+      m[15] = t[15] - 0x7fff - ((m[14]>>16) & 1);
+      b = (m[15]>>16) & 1;
+      m[14] &= 0xffff;
+      sel25519(t, m, 1-b);
+    }
+    for (i = 0; i < 16; i++) {
+      o[2*i] = t[i] & 0xff;
+      o[2*i+1] = t[i]>>8;
+    }
+  }
+
+  // ----
+
+  // Converts Ed25519 public key to Curve25519 public key.
+  // montgomeryX = (edwardsY + 1)*inverse(1 - edwardsY) mod p
+  function convertPublicKey(pk) {
+    var z = new Uint8Array(32),
+        y = gf(), a = gf(), b = gf();
+
+    unpack25519(y, pk);
+
+    A(a, gf1, y);
+    Z(b, gf1, y);
+    inv25519(b, b);
+    M(a, a, b);
+
+    pack25519(z, a);
+    return z;
+  }
+
+  // Converts Ed25519 secret key to Curve25519 secret key.
+  function convertSecretKey(sk) {
+    var d = new Uint8Array(64), o = new Uint8Array(32), i;
+    nacl.lowlevel.crypto_hash(d, sk, 32);
+    d[0] &= 248;
+    d[31] &= 127;
+    d[31] |= 64;
+    for (i = 0; i < 32; i++) o[i] = d[i];
+    for (i = 0; i < 64; i++) d[i] = 0;
+    return o;
+  }
+
+  function convertKeyPair(edKeyPair) {
+    return {
+      publicKey: convertPublicKey(edKeyPair.publicKey),
+      secretKey: convertSecretKey(edKeyPair.secretKey)
+    };
+  }
+
+  return {
+    convertPublicKey: convertPublicKey,
+    convertSecretKey: convertSecretKey,
+    convertKeyPair: convertKeyPair,
+  };
+
+}));
+
+},{"tweetnacl/nacl-fast":86}],16:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
   var eLen = nBytes * 8 - mLen - 1
@@ -2152,33 +2547,1267 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],11:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
+
+
+module.exports = function (buf) {
+  var len = buf.length, i
+
+  for(i = len - 1; buf[i] === 255; i--) buf[i] = 0
+  if(~i) buf[i] = buf[i] + 1
+
+  return buf
+}
+
+},{}],18:[function(require,module,exports){
+if (typeof Object.create === 'function') {
+  // implementation from standard node.js 'util' module
+  module.exports = function inherits(ctor, superCtor) {
+    ctor.super_ = superCtor
+    ctor.prototype = Object.create(superCtor.prototype, {
+      constructor: {
+        value: ctor,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      }
+    });
+  };
+} else {
+  // old school shim for old browsers
+  module.exports = function inherits(ctor, superCtor) {
+    ctor.super_ = superCtor
+    var TempCtor = function () {}
+    TempCtor.prototype = superCtor.prototype
+    ctor.prototype = new TempCtor()
+    ctor.prototype.constructor = ctor
+  }
+}
+
+},{}],19:[function(require,module,exports){
+/*!
+ * Determine if an object is a Buffer
+ *
+ * @author   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
+ * @license  MIT
+ */
+
+// The _isBuffer check is for Safari 5-7 support, because it's missing
+// Object.prototype.constructor. Remove this eventually
+module.exports = function (obj) {
+  return obj != null && (isBuffer(obj) || isSlowBuffer(obj) || !!obj._isBuffer)
+}
+
+function isBuffer (obj) {
+  return !!obj.constructor && typeof obj.constructor.isBuffer === 'function' && obj.constructor.isBuffer(obj)
+}
+
+// For Node v0.10 support. Remove this eventually.
+function isSlowBuffer (obj) {
+  return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
+}
+
+},{}],20:[function(require,module,exports){
 var toString = {}.toString;
 
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
 
-},{}],12:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 /**
- * Determine if an object is Buffer
- *
- * Author:   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
- * License:  MIT
- *
- * `npm install is-buffer`
+ * lodash (Custom Build) <https://lodash.com/>
+ * Build: `lodash modularize exports="npm" -o ./`
+ * Copyright jQuery Foundation and other contributors <https://jquery.org/>
+ * Released under MIT license <https://lodash.com/license>
+ * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
+ * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
  */
 
-module.exports = function (obj) {
-  return !!(obj != null &&
-    (obj._isBuffer || // For Safari 5-7 (missing Object.prototype.constructor)
-      (obj.constructor &&
-      typeof obj.constructor.isBuffer === 'function' &&
-      obj.constructor.isBuffer(obj))
-    ))
+/** Used as references for various `Number` constants. */
+var MAX_SAFE_INTEGER = 9007199254740991;
+
+/** `Object#toString` result references. */
+var argsTag = '[object Arguments]',
+    funcTag = '[object Function]',
+    genTag = '[object GeneratorFunction]';
+
+/** Used to detect unsigned integer values. */
+var reIsUint = /^(?:0|[1-9]\d*)$/;
+
+/**
+ * A faster alternative to `Function#apply`, this function invokes `func`
+ * with the `this` binding of `thisArg` and the arguments of `args`.
+ *
+ * @private
+ * @param {Function} func The function to invoke.
+ * @param {*} thisArg The `this` binding of `func`.
+ * @param {Array} args The arguments to invoke `func` with.
+ * @returns {*} Returns the result of `func`.
+ */
+function apply(func, thisArg, args) {
+  switch (args.length) {
+    case 0: return func.call(thisArg);
+    case 1: return func.call(thisArg, args[0]);
+    case 2: return func.call(thisArg, args[0], args[1]);
+    case 3: return func.call(thisArg, args[0], args[1], args[2]);
+  }
+  return func.apply(thisArg, args);
 }
 
-},{}],13:[function(require,module,exports){
+/**
+ * The base implementation of `_.times` without support for iteratee shorthands
+ * or max array length checks.
+ *
+ * @private
+ * @param {number} n The number of times to invoke `iteratee`.
+ * @param {Function} iteratee The function invoked per iteration.
+ * @returns {Array} Returns the array of results.
+ */
+function baseTimes(n, iteratee) {
+  var index = -1,
+      result = Array(n);
+
+  while (++index < n) {
+    result[index] = iteratee(index);
+  }
+  return result;
+}
+
+/** Used for built-in method references. */
+var objectProto = Object.prototype;
+
+/** Used to check objects for own properties. */
+var hasOwnProperty = objectProto.hasOwnProperty;
+
+/**
+ * Used to resolve the
+ * [`toStringTag`](http://ecma-international.org/ecma-262/7.0/#sec-object.prototype.tostring)
+ * of values.
+ */
+var objectToString = objectProto.toString;
+
+/** Built-in value references. */
+var propertyIsEnumerable = objectProto.propertyIsEnumerable;
+
+/* Built-in method references for those with the same name as other `lodash` methods. */
+var nativeMax = Math.max;
+
+/**
+ * Creates an array of the enumerable property names of the array-like `value`.
+ *
+ * @private
+ * @param {*} value The value to query.
+ * @param {boolean} inherited Specify returning inherited property names.
+ * @returns {Array} Returns the array of property names.
+ */
+function arrayLikeKeys(value, inherited) {
+  // Safari 8.1 makes `arguments.callee` enumerable in strict mode.
+  // Safari 9 makes `arguments.length` enumerable in strict mode.
+  var result = (isArray(value) || isArguments(value))
+    ? baseTimes(value.length, String)
+    : [];
+
+  var length = result.length,
+      skipIndexes = !!length;
+
+  for (var key in value) {
+    if ((inherited || hasOwnProperty.call(value, key)) &&
+        !(skipIndexes && (key == 'length' || isIndex(key, length)))) {
+      result.push(key);
+    }
+  }
+  return result;
+}
+
+/**
+ * Used by `_.defaults` to customize its `_.assignIn` use.
+ *
+ * @private
+ * @param {*} objValue The destination value.
+ * @param {*} srcValue The source value.
+ * @param {string} key The key of the property to assign.
+ * @param {Object} object The parent object of `objValue`.
+ * @returns {*} Returns the value to assign.
+ */
+function assignInDefaults(objValue, srcValue, key, object) {
+  if (objValue === undefined ||
+      (eq(objValue, objectProto[key]) && !hasOwnProperty.call(object, key))) {
+    return srcValue;
+  }
+  return objValue;
+}
+
+/**
+ * Assigns `value` to `key` of `object` if the existing value is not equivalent
+ * using [`SameValueZero`](http://ecma-international.org/ecma-262/7.0/#sec-samevaluezero)
+ * for equality comparisons.
+ *
+ * @private
+ * @param {Object} object The object to modify.
+ * @param {string} key The key of the property to assign.
+ * @param {*} value The value to assign.
+ */
+function assignValue(object, key, value) {
+  var objValue = object[key];
+  if (!(hasOwnProperty.call(object, key) && eq(objValue, value)) ||
+      (value === undefined && !(key in object))) {
+    object[key] = value;
+  }
+}
+
+/**
+ * The base implementation of `_.keysIn` which doesn't treat sparse arrays as dense.
+ *
+ * @private
+ * @param {Object} object The object to query.
+ * @returns {Array} Returns the array of property names.
+ */
+function baseKeysIn(object) {
+  if (!isObject(object)) {
+    return nativeKeysIn(object);
+  }
+  var isProto = isPrototype(object),
+      result = [];
+
+  for (var key in object) {
+    if (!(key == 'constructor' && (isProto || !hasOwnProperty.call(object, key)))) {
+      result.push(key);
+    }
+  }
+  return result;
+}
+
+/**
+ * The base implementation of `_.rest` which doesn't validate or coerce arguments.
+ *
+ * @private
+ * @param {Function} func The function to apply a rest parameter to.
+ * @param {number} [start=func.length-1] The start position of the rest parameter.
+ * @returns {Function} Returns the new function.
+ */
+function baseRest(func, start) {
+  start = nativeMax(start === undefined ? (func.length - 1) : start, 0);
+  return function() {
+    var args = arguments,
+        index = -1,
+        length = nativeMax(args.length - start, 0),
+        array = Array(length);
+
+    while (++index < length) {
+      array[index] = args[start + index];
+    }
+    index = -1;
+    var otherArgs = Array(start + 1);
+    while (++index < start) {
+      otherArgs[index] = args[index];
+    }
+    otherArgs[start] = array;
+    return apply(func, this, otherArgs);
+  };
+}
+
+/**
+ * Copies properties of `source` to `object`.
+ *
+ * @private
+ * @param {Object} source The object to copy properties from.
+ * @param {Array} props The property identifiers to copy.
+ * @param {Object} [object={}] The object to copy properties to.
+ * @param {Function} [customizer] The function to customize copied values.
+ * @returns {Object} Returns `object`.
+ */
+function copyObject(source, props, object, customizer) {
+  object || (object = {});
+
+  var index = -1,
+      length = props.length;
+
+  while (++index < length) {
+    var key = props[index];
+
+    var newValue = customizer
+      ? customizer(object[key], source[key], key, object, source)
+      : undefined;
+
+    assignValue(object, key, newValue === undefined ? source[key] : newValue);
+  }
+  return object;
+}
+
+/**
+ * Creates a function like `_.assign`.
+ *
+ * @private
+ * @param {Function} assigner The function to assign values.
+ * @returns {Function} Returns the new assigner function.
+ */
+function createAssigner(assigner) {
+  return baseRest(function(object, sources) {
+    var index = -1,
+        length = sources.length,
+        customizer = length > 1 ? sources[length - 1] : undefined,
+        guard = length > 2 ? sources[2] : undefined;
+
+    customizer = (assigner.length > 3 && typeof customizer == 'function')
+      ? (length--, customizer)
+      : undefined;
+
+    if (guard && isIterateeCall(sources[0], sources[1], guard)) {
+      customizer = length < 3 ? undefined : customizer;
+      length = 1;
+    }
+    object = Object(object);
+    while (++index < length) {
+      var source = sources[index];
+      if (source) {
+        assigner(object, source, index, customizer);
+      }
+    }
+    return object;
+  });
+}
+
+/**
+ * Checks if `value` is a valid array-like index.
+ *
+ * @private
+ * @param {*} value The value to check.
+ * @param {number} [length=MAX_SAFE_INTEGER] The upper bounds of a valid index.
+ * @returns {boolean} Returns `true` if `value` is a valid index, else `false`.
+ */
+function isIndex(value, length) {
+  length = length == null ? MAX_SAFE_INTEGER : length;
+  return !!length &&
+    (typeof value == 'number' || reIsUint.test(value)) &&
+    (value > -1 && value % 1 == 0 && value < length);
+}
+
+/**
+ * Checks if the given arguments are from an iteratee call.
+ *
+ * @private
+ * @param {*} value The potential iteratee value argument.
+ * @param {*} index The potential iteratee index or key argument.
+ * @param {*} object The potential iteratee object argument.
+ * @returns {boolean} Returns `true` if the arguments are from an iteratee call,
+ *  else `false`.
+ */
+function isIterateeCall(value, index, object) {
+  if (!isObject(object)) {
+    return false;
+  }
+  var type = typeof index;
+  if (type == 'number'
+        ? (isArrayLike(object) && isIndex(index, object.length))
+        : (type == 'string' && index in object)
+      ) {
+    return eq(object[index], value);
+  }
+  return false;
+}
+
+/**
+ * Checks if `value` is likely a prototype object.
+ *
+ * @private
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is a prototype, else `false`.
+ */
+function isPrototype(value) {
+  var Ctor = value && value.constructor,
+      proto = (typeof Ctor == 'function' && Ctor.prototype) || objectProto;
+
+  return value === proto;
+}
+
+/**
+ * This function is like
+ * [`Object.keys`](http://ecma-international.org/ecma-262/7.0/#sec-object.keys)
+ * except that it includes inherited enumerable properties.
+ *
+ * @private
+ * @param {Object} object The object to query.
+ * @returns {Array} Returns the array of property names.
+ */
+function nativeKeysIn(object) {
+  var result = [];
+  if (object != null) {
+    for (var key in Object(object)) {
+      result.push(key);
+    }
+  }
+  return result;
+}
+
+/**
+ * Performs a
+ * [`SameValueZero`](http://ecma-international.org/ecma-262/7.0/#sec-samevaluezero)
+ * comparison between two values to determine if they are equivalent.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to compare.
+ * @param {*} other The other value to compare.
+ * @returns {boolean} Returns `true` if the values are equivalent, else `false`.
+ * @example
+ *
+ * var object = { 'a': 1 };
+ * var other = { 'a': 1 };
+ *
+ * _.eq(object, object);
+ * // => true
+ *
+ * _.eq(object, other);
+ * // => false
+ *
+ * _.eq('a', 'a');
+ * // => true
+ *
+ * _.eq('a', Object('a'));
+ * // => false
+ *
+ * _.eq(NaN, NaN);
+ * // => true
+ */
+function eq(value, other) {
+  return value === other || (value !== value && other !== other);
+}
+
+/**
+ * Checks if `value` is likely an `arguments` object.
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an `arguments` object,
+ *  else `false`.
+ * @example
+ *
+ * _.isArguments(function() { return arguments; }());
+ * // => true
+ *
+ * _.isArguments([1, 2, 3]);
+ * // => false
+ */
+function isArguments(value) {
+  // Safari 8.1 makes `arguments.callee` enumerable in strict mode.
+  return isArrayLikeObject(value) && hasOwnProperty.call(value, 'callee') &&
+    (!propertyIsEnumerable.call(value, 'callee') || objectToString.call(value) == argsTag);
+}
+
+/**
+ * Checks if `value` is classified as an `Array` object.
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an array, else `false`.
+ * @example
+ *
+ * _.isArray([1, 2, 3]);
+ * // => true
+ *
+ * _.isArray(document.body.children);
+ * // => false
+ *
+ * _.isArray('abc');
+ * // => false
+ *
+ * _.isArray(_.noop);
+ * // => false
+ */
+var isArray = Array.isArray;
+
+/**
+ * Checks if `value` is array-like. A value is considered array-like if it's
+ * not a function and has a `value.length` that's an integer greater than or
+ * equal to `0` and less than or equal to `Number.MAX_SAFE_INTEGER`.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is array-like, else `false`.
+ * @example
+ *
+ * _.isArrayLike([1, 2, 3]);
+ * // => true
+ *
+ * _.isArrayLike(document.body.children);
+ * // => true
+ *
+ * _.isArrayLike('abc');
+ * // => true
+ *
+ * _.isArrayLike(_.noop);
+ * // => false
+ */
+function isArrayLike(value) {
+  return value != null && isLength(value.length) && !isFunction(value);
+}
+
+/**
+ * This method is like `_.isArrayLike` except that it also checks if `value`
+ * is an object.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an array-like object,
+ *  else `false`.
+ * @example
+ *
+ * _.isArrayLikeObject([1, 2, 3]);
+ * // => true
+ *
+ * _.isArrayLikeObject(document.body.children);
+ * // => true
+ *
+ * _.isArrayLikeObject('abc');
+ * // => false
+ *
+ * _.isArrayLikeObject(_.noop);
+ * // => false
+ */
+function isArrayLikeObject(value) {
+  return isObjectLike(value) && isArrayLike(value);
+}
+
+/**
+ * Checks if `value` is classified as a `Function` object.
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is a function, else `false`.
+ * @example
+ *
+ * _.isFunction(_);
+ * // => true
+ *
+ * _.isFunction(/abc/);
+ * // => false
+ */
+function isFunction(value) {
+  // The use of `Object#toString` avoids issues with the `typeof` operator
+  // in Safari 8-9 which returns 'object' for typed array and other constructors.
+  var tag = isObject(value) ? objectToString.call(value) : '';
+  return tag == funcTag || tag == genTag;
+}
+
+/**
+ * Checks if `value` is a valid array-like length.
+ *
+ * **Note:** This method is loosely based on
+ * [`ToLength`](http://ecma-international.org/ecma-262/7.0/#sec-tolength).
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is a valid length, else `false`.
+ * @example
+ *
+ * _.isLength(3);
+ * // => true
+ *
+ * _.isLength(Number.MIN_VALUE);
+ * // => false
+ *
+ * _.isLength(Infinity);
+ * // => false
+ *
+ * _.isLength('3');
+ * // => false
+ */
+function isLength(value) {
+  return typeof value == 'number' &&
+    value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
+}
+
+/**
+ * Checks if `value` is the
+ * [language type](http://www.ecma-international.org/ecma-262/7.0/#sec-ecmascript-language-types)
+ * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an object, else `false`.
+ * @example
+ *
+ * _.isObject({});
+ * // => true
+ *
+ * _.isObject([1, 2, 3]);
+ * // => true
+ *
+ * _.isObject(_.noop);
+ * // => true
+ *
+ * _.isObject(null);
+ * // => false
+ */
+function isObject(value) {
+  var type = typeof value;
+  return !!value && (type == 'object' || type == 'function');
+}
+
+/**
+ * Checks if `value` is object-like. A value is object-like if it's not `null`
+ * and has a `typeof` result of "object".
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
+ * @example
+ *
+ * _.isObjectLike({});
+ * // => true
+ *
+ * _.isObjectLike([1, 2, 3]);
+ * // => true
+ *
+ * _.isObjectLike(_.noop);
+ * // => false
+ *
+ * _.isObjectLike(null);
+ * // => false
+ */
+function isObjectLike(value) {
+  return !!value && typeof value == 'object';
+}
+
+/**
+ * This method is like `_.assignIn` except that it accepts `customizer`
+ * which is invoked to produce the assigned values. If `customizer` returns
+ * `undefined`, assignment is handled by the method instead. The `customizer`
+ * is invoked with five arguments: (objValue, srcValue, key, object, source).
+ *
+ * **Note:** This method mutates `object`.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @alias extendWith
+ * @category Object
+ * @param {Object} object The destination object.
+ * @param {...Object} sources The source objects.
+ * @param {Function} [customizer] The function to customize assigned values.
+ * @returns {Object} Returns `object`.
+ * @see _.assignWith
+ * @example
+ *
+ * function customizer(objValue, srcValue) {
+ *   return _.isUndefined(objValue) ? srcValue : objValue;
+ * }
+ *
+ * var defaults = _.partialRight(_.assignInWith, customizer);
+ *
+ * defaults({ 'a': 1 }, { 'b': 2 }, { 'a': 3 });
+ * // => { 'a': 1, 'b': 2 }
+ */
+var assignInWith = createAssigner(function(object, source, srcIndex, customizer) {
+  copyObject(source, keysIn(source), object, customizer);
+});
+
+/**
+ * Assigns own and inherited enumerable string keyed properties of source
+ * objects to the destination object for all destination properties that
+ * resolve to `undefined`. Source objects are applied from left to right.
+ * Once a property is set, additional values of the same property are ignored.
+ *
+ * **Note:** This method mutates `object`.
+ *
+ * @static
+ * @since 0.1.0
+ * @memberOf _
+ * @category Object
+ * @param {Object} object The destination object.
+ * @param {...Object} [sources] The source objects.
+ * @returns {Object} Returns `object`.
+ * @see _.defaultsDeep
+ * @example
+ *
+ * _.defaults({ 'a': 1 }, { 'b': 2 }, { 'a': 3 });
+ * // => { 'a': 1, 'b': 2 }
+ */
+var defaults = baseRest(function(args) {
+  args.push(undefined, assignInDefaults);
+  return apply(assignInWith, undefined, args);
+});
+
+/**
+ * Creates an array of the own and inherited enumerable property names of `object`.
+ *
+ * **Note:** Non-object values are coerced to objects.
+ *
+ * @static
+ * @memberOf _
+ * @since 3.0.0
+ * @category Object
+ * @param {Object} object The object to query.
+ * @returns {Array} Returns the array of property names.
+ * @example
+ *
+ * function Foo() {
+ *   this.a = 1;
+ *   this.b = 2;
+ * }
+ *
+ * Foo.prototype.c = 3;
+ *
+ * _.keysIn(new Foo);
+ * // => ['a', 'b', 'c'] (iteration order is not guaranteed)
+ */
+function keysIn(object) {
+  return isArrayLike(object) ? arrayLikeKeys(object, true) : baseKeysIn(object);
+}
+
+module.exports = defaults;
+
+},{}],22:[function(require,module,exports){
+(function (global){
+/**
+ * lodash (Custom Build) <https://lodash.com/>
+ * Build: `lodash modularize exports="npm" -o ./`
+ * Copyright jQuery Foundation and other contributors <https://jquery.org/>
+ * Released under MIT license <https://lodash.com/license>
+ * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
+ * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
+ */
+
+/** Used as references for various `Number` constants. */
+var INFINITY = 1 / 0,
+    MAX_SAFE_INTEGER = 9007199254740991;
+
+/** `Object#toString` result references. */
+var argsTag = '[object Arguments]',
+    funcTag = '[object Function]',
+    genTag = '[object GeneratorFunction]',
+    symbolTag = '[object Symbol]';
+
+/** Detect free variable `global` from Node.js. */
+var freeGlobal = typeof global == 'object' && global && global.Object === Object && global;
+
+/** Detect free variable `self`. */
+var freeSelf = typeof self == 'object' && self && self.Object === Object && self;
+
+/** Used as a reference to the global object. */
+var root = freeGlobal || freeSelf || Function('return this')();
+
+/**
+ * A faster alternative to `Function#apply`, this function invokes `func`
+ * with the `this` binding of `thisArg` and the arguments of `args`.
+ *
+ * @private
+ * @param {Function} func The function to invoke.
+ * @param {*} thisArg The `this` binding of `func`.
+ * @param {Array} args The arguments to invoke `func` with.
+ * @returns {*} Returns the result of `func`.
+ */
+function apply(func, thisArg, args) {
+  switch (args.length) {
+    case 0: return func.call(thisArg);
+    case 1: return func.call(thisArg, args[0]);
+    case 2: return func.call(thisArg, args[0], args[1]);
+    case 3: return func.call(thisArg, args[0], args[1], args[2]);
+  }
+  return func.apply(thisArg, args);
+}
+
+/**
+ * A specialized version of `_.map` for arrays without support for iteratee
+ * shorthands.
+ *
+ * @private
+ * @param {Array} [array] The array to iterate over.
+ * @param {Function} iteratee The function invoked per iteration.
+ * @returns {Array} Returns the new mapped array.
+ */
+function arrayMap(array, iteratee) {
+  var index = -1,
+      length = array ? array.length : 0,
+      result = Array(length);
+
+  while (++index < length) {
+    result[index] = iteratee(array[index], index, array);
+  }
+  return result;
+}
+
+/**
+ * Appends the elements of `values` to `array`.
+ *
+ * @private
+ * @param {Array} array The array to modify.
+ * @param {Array} values The values to append.
+ * @returns {Array} Returns `array`.
+ */
+function arrayPush(array, values) {
+  var index = -1,
+      length = values.length,
+      offset = array.length;
+
+  while (++index < length) {
+    array[offset + index] = values[index];
+  }
+  return array;
+}
+
+/** Used for built-in method references. */
+var objectProto = Object.prototype;
+
+/** Used to check objects for own properties. */
+var hasOwnProperty = objectProto.hasOwnProperty;
+
+/**
+ * Used to resolve the
+ * [`toStringTag`](http://ecma-international.org/ecma-262/7.0/#sec-object.prototype.tostring)
+ * of values.
+ */
+var objectToString = objectProto.toString;
+
+/** Built-in value references. */
+var Symbol = root.Symbol,
+    propertyIsEnumerable = objectProto.propertyIsEnumerable,
+    spreadableSymbol = Symbol ? Symbol.isConcatSpreadable : undefined;
+
+/* Built-in method references for those with the same name as other `lodash` methods. */
+var nativeMax = Math.max;
+
+/**
+ * The base implementation of `_.flatten` with support for restricting flattening.
+ *
+ * @private
+ * @param {Array} array The array to flatten.
+ * @param {number} depth The maximum recursion depth.
+ * @param {boolean} [predicate=isFlattenable] The function invoked per iteration.
+ * @param {boolean} [isStrict] Restrict to values that pass `predicate` checks.
+ * @param {Array} [result=[]] The initial result value.
+ * @returns {Array} Returns the new flattened array.
+ */
+function baseFlatten(array, depth, predicate, isStrict, result) {
+  var index = -1,
+      length = array.length;
+
+  predicate || (predicate = isFlattenable);
+  result || (result = []);
+
+  while (++index < length) {
+    var value = array[index];
+    if (depth > 0 && predicate(value)) {
+      if (depth > 1) {
+        // Recursively flatten arrays (susceptible to call stack limits).
+        baseFlatten(value, depth - 1, predicate, isStrict, result);
+      } else {
+        arrayPush(result, value);
+      }
+    } else if (!isStrict) {
+      result[result.length] = value;
+    }
+  }
+  return result;
+}
+
+/**
+ * The base implementation of `_.pick` without support for individual
+ * property identifiers.
+ *
+ * @private
+ * @param {Object} object The source object.
+ * @param {string[]} props The property identifiers to pick.
+ * @returns {Object} Returns the new object.
+ */
+function basePick(object, props) {
+  object = Object(object);
+  return basePickBy(object, props, function(value, key) {
+    return key in object;
+  });
+}
+
+/**
+ * The base implementation of  `_.pickBy` without support for iteratee shorthands.
+ *
+ * @private
+ * @param {Object} object The source object.
+ * @param {string[]} props The property identifiers to pick from.
+ * @param {Function} predicate The function invoked per property.
+ * @returns {Object} Returns the new object.
+ */
+function basePickBy(object, props, predicate) {
+  var index = -1,
+      length = props.length,
+      result = {};
+
+  while (++index < length) {
+    var key = props[index],
+        value = object[key];
+
+    if (predicate(value, key)) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/**
+ * The base implementation of `_.rest` which doesn't validate or coerce arguments.
+ *
+ * @private
+ * @param {Function} func The function to apply a rest parameter to.
+ * @param {number} [start=func.length-1] The start position of the rest parameter.
+ * @returns {Function} Returns the new function.
+ */
+function baseRest(func, start) {
+  start = nativeMax(start === undefined ? (func.length - 1) : start, 0);
+  return function() {
+    var args = arguments,
+        index = -1,
+        length = nativeMax(args.length - start, 0),
+        array = Array(length);
+
+    while (++index < length) {
+      array[index] = args[start + index];
+    }
+    index = -1;
+    var otherArgs = Array(start + 1);
+    while (++index < start) {
+      otherArgs[index] = args[index];
+    }
+    otherArgs[start] = array;
+    return apply(func, this, otherArgs);
+  };
+}
+
+/**
+ * Checks if `value` is a flattenable `arguments` object or array.
+ *
+ * @private
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is flattenable, else `false`.
+ */
+function isFlattenable(value) {
+  return isArray(value) || isArguments(value) ||
+    !!(spreadableSymbol && value && value[spreadableSymbol]);
+}
+
+/**
+ * Converts `value` to a string key if it's not a string or symbol.
+ *
+ * @private
+ * @param {*} value The value to inspect.
+ * @returns {string|symbol} Returns the key.
+ */
+function toKey(value) {
+  if (typeof value == 'string' || isSymbol(value)) {
+    return value;
+  }
+  var result = (value + '');
+  return (result == '0' && (1 / value) == -INFINITY) ? '-0' : result;
+}
+
+/**
+ * Checks if `value` is likely an `arguments` object.
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an `arguments` object,
+ *  else `false`.
+ * @example
+ *
+ * _.isArguments(function() { return arguments; }());
+ * // => true
+ *
+ * _.isArguments([1, 2, 3]);
+ * // => false
+ */
+function isArguments(value) {
+  // Safari 8.1 makes `arguments.callee` enumerable in strict mode.
+  return isArrayLikeObject(value) && hasOwnProperty.call(value, 'callee') &&
+    (!propertyIsEnumerable.call(value, 'callee') || objectToString.call(value) == argsTag);
+}
+
+/**
+ * Checks if `value` is classified as an `Array` object.
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an array, else `false`.
+ * @example
+ *
+ * _.isArray([1, 2, 3]);
+ * // => true
+ *
+ * _.isArray(document.body.children);
+ * // => false
+ *
+ * _.isArray('abc');
+ * // => false
+ *
+ * _.isArray(_.noop);
+ * // => false
+ */
+var isArray = Array.isArray;
+
+/**
+ * Checks if `value` is array-like. A value is considered array-like if it's
+ * not a function and has a `value.length` that's an integer greater than or
+ * equal to `0` and less than or equal to `Number.MAX_SAFE_INTEGER`.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is array-like, else `false`.
+ * @example
+ *
+ * _.isArrayLike([1, 2, 3]);
+ * // => true
+ *
+ * _.isArrayLike(document.body.children);
+ * // => true
+ *
+ * _.isArrayLike('abc');
+ * // => true
+ *
+ * _.isArrayLike(_.noop);
+ * // => false
+ */
+function isArrayLike(value) {
+  return value != null && isLength(value.length) && !isFunction(value);
+}
+
+/**
+ * This method is like `_.isArrayLike` except that it also checks if `value`
+ * is an object.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an array-like object,
+ *  else `false`.
+ * @example
+ *
+ * _.isArrayLikeObject([1, 2, 3]);
+ * // => true
+ *
+ * _.isArrayLikeObject(document.body.children);
+ * // => true
+ *
+ * _.isArrayLikeObject('abc');
+ * // => false
+ *
+ * _.isArrayLikeObject(_.noop);
+ * // => false
+ */
+function isArrayLikeObject(value) {
+  return isObjectLike(value) && isArrayLike(value);
+}
+
+/**
+ * Checks if `value` is classified as a `Function` object.
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is a function, else `false`.
+ * @example
+ *
+ * _.isFunction(_);
+ * // => true
+ *
+ * _.isFunction(/abc/);
+ * // => false
+ */
+function isFunction(value) {
+  // The use of `Object#toString` avoids issues with the `typeof` operator
+  // in Safari 8-9 which returns 'object' for typed array and other constructors.
+  var tag = isObject(value) ? objectToString.call(value) : '';
+  return tag == funcTag || tag == genTag;
+}
+
+/**
+ * Checks if `value` is a valid array-like length.
+ *
+ * **Note:** This method is loosely based on
+ * [`ToLength`](http://ecma-international.org/ecma-262/7.0/#sec-tolength).
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is a valid length, else `false`.
+ * @example
+ *
+ * _.isLength(3);
+ * // => true
+ *
+ * _.isLength(Number.MIN_VALUE);
+ * // => false
+ *
+ * _.isLength(Infinity);
+ * // => false
+ *
+ * _.isLength('3');
+ * // => false
+ */
+function isLength(value) {
+  return typeof value == 'number' &&
+    value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
+}
+
+/**
+ * Checks if `value` is the
+ * [language type](http://www.ecma-international.org/ecma-262/7.0/#sec-ecmascript-language-types)
+ * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
+ *
+ * @static
+ * @memberOf _
+ * @since 0.1.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is an object, else `false`.
+ * @example
+ *
+ * _.isObject({});
+ * // => true
+ *
+ * _.isObject([1, 2, 3]);
+ * // => true
+ *
+ * _.isObject(_.noop);
+ * // => true
+ *
+ * _.isObject(null);
+ * // => false
+ */
+function isObject(value) {
+  var type = typeof value;
+  return !!value && (type == 'object' || type == 'function');
+}
+
+/**
+ * Checks if `value` is object-like. A value is object-like if it's not `null`
+ * and has a `typeof` result of "object".
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
+ * @example
+ *
+ * _.isObjectLike({});
+ * // => true
+ *
+ * _.isObjectLike([1, 2, 3]);
+ * // => true
+ *
+ * _.isObjectLike(_.noop);
+ * // => false
+ *
+ * _.isObjectLike(null);
+ * // => false
+ */
+function isObjectLike(value) {
+  return !!value && typeof value == 'object';
+}
+
+/**
+ * Checks if `value` is classified as a `Symbol` primitive or object.
+ *
+ * @static
+ * @memberOf _
+ * @since 4.0.0
+ * @category Lang
+ * @param {*} value The value to check.
+ * @returns {boolean} Returns `true` if `value` is a symbol, else `false`.
+ * @example
+ *
+ * _.isSymbol(Symbol.iterator);
+ * // => true
+ *
+ * _.isSymbol('abc');
+ * // => false
+ */
+function isSymbol(value) {
+  return typeof value == 'symbol' ||
+    (isObjectLike(value) && objectToString.call(value) == symbolTag);
+}
+
+/**
+ * Creates an object composed of the picked `object` properties.
+ *
+ * @static
+ * @since 0.1.0
+ * @memberOf _
+ * @category Object
+ * @param {Object} object The source object.
+ * @param {...(string|string[])} [props] The property identifiers to pick.
+ * @returns {Object} Returns the new object.
+ * @example
+ *
+ * var object = { 'a': 1, 'b': '2', 'c': 3 };
+ *
+ * _.pick(object, ['a', 'c']);
+ * // => { 'a': 1, 'c': 3 }
+ */
+var pick = baseRest(function(object, props) {
+  return object == null ? {} : basePick(object, arrayMap(baseFlatten(props, 1), toKey));
+});
+
+module.exports = pick;
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],23:[function(require,module,exports){
+
+var looper = module.exports = function (fun) {
+  (function next () {
+    var loop = true, returned = false, sync = false
+    do {
+      sync = true; loop = false
+      fun.call(this, function () {
+        if(sync) loop = true
+        else     next()
+      })
+      sync = false
+    } while(loop)
+  })()
+}
+
+},{}],24:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -2406,9 +4035,8 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":14}],14:[function(require,module,exports){
+},{"_process":25}],25:[function(require,module,exports){
 // shim for using process in browser
-
 var process = module.exports = {};
 
 // cached from whatever global is present so that test runners that stub it
@@ -2420,21 +4048,63 @@ var cachedSetTimeout;
 var cachedClearTimeout;
 
 (function () {
-  try {
-    cachedSetTimeout = setTimeout;
-  } catch (e) {
-    cachedSetTimeout = function () {
-      throw new Error('setTimeout is not defined');
+    try {
+        cachedSetTimeout = setTimeout;
+    } catch (e) {
+        cachedSetTimeout = function () {
+            throw new Error('setTimeout is not defined');
+        }
     }
-  }
-  try {
-    cachedClearTimeout = clearTimeout;
-  } catch (e) {
-    cachedClearTimeout = function () {
-      throw new Error('clearTimeout is not defined');
+    try {
+        cachedClearTimeout = clearTimeout;
+    } catch (e) {
+        cachedClearTimeout = function () {
+            throw new Error('clearTimeout is not defined');
+        }
     }
-  }
 } ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
 var queue = [];
 var draining = false;
 var currentQueue;
@@ -2459,7 +4129,7 @@ function drainQueue() {
     if (draining) {
         return;
     }
-    var timeout = cachedSetTimeout(cleanUpNextTick);
+    var timeout = runTimeout(cleanUpNextTick);
     draining = true;
 
     var len = queue.length;
@@ -2476,7 +4146,7 @@ function drainQueue() {
     }
     currentQueue = null;
     draining = false;
-    cachedClearTimeout(timeout);
+    runClearTimeout(timeout);
 }
 
 process.nextTick = function (fun) {
@@ -2488,7 +4158,7 @@ process.nextTick = function (fun) {
     }
     queue.push(new Item(fun, args));
     if (queue.length === 1 && !draining) {
-        cachedSetTimeout(drainQueue, 0);
+        runTimeout(drainQueue);
     }
 };
 
@@ -2527,7 +4197,1496 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],15:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
+(function (Buffer){
+'use strict'
+var sodium = require('chloride')
+var Reader = require('pull-reader')
+var increment = require('increment-buffer')
+var through = require('pull-through')
+var split = require('split-buffer')
+
+var isBuffer = Buffer.isBuffer
+var concat = Buffer.concat
+
+var box = sodium.crypto_secretbox_easy
+var unbox = sodium.crypto_secretbox_open_easy  
+
+function unbox_detached (mac, boxed, nonce, key) {
+  return sodium.crypto_secretbox_open_easy(concat([mac, boxed]), nonce, key)
+}
+
+var max = 1024*4
+
+var NONCE_LEN = 24
+var HEADER_LEN = 2+16+16
+
+function isZeros(b) {
+  for(var i = 0; i < b.length; i++)
+    if(b[i] !== 0) return false
+  return true
+}
+
+function randomSecret(n) {
+  var rand = new Buffer(n)
+  sodium.randombytes(rand)
+  return rand
+}
+
+function copy (a) {
+  var b = new Buffer(a.length)
+  a.copy(b, 0, 0, a.length)
+  return b
+}
+
+exports.createBoxStream =
+exports.createEncryptStream = function (key, init_nonce) {
+
+  if(key.length === 56) {
+    init_nonce = key.slice(32, 56)
+    key = key.slice(0, 32)
+  }
+  else if(!(key.length === 32 && init_nonce.length === 24))
+    throw new Error('nonce must be 24 bytes')
+
+  // we need two nonces because increment mutates,
+  // and we need the next for the header,
+  // and the next next nonce for the packet
+  var nonce1 = copy(init_nonce), nonce2 = copy(init_nonce)
+  var head = new Buffer(18)
+
+  return through(function (data) {
+
+    if('string' === typeof data)
+      data = new Buffer(data, 'utf8')
+    else if(!isBuffer(data))
+      return this.emit('error', new Error('must be buffer'))
+
+    if(data.length === 0) return
+
+    var input = split(data, max)
+
+    for(var i = 0; i < input.length; i++) {
+      head.writeUInt16BE(input[i].length, 0)
+      var boxed = box(input[i], increment(nonce2), key)
+      //write the mac into the header.
+      boxed.copy(head, 2, 0, 16)
+
+      this.queue(box(head, nonce1, key))
+      this.queue(boxed.slice(16, 16 + input[i].length))
+
+      increment(increment(nonce1)); increment(nonce2)
+    }
+  }, function (err) {
+    if(err) return this.queue(null)
+
+    //handle special-case of empty session
+    //final header is same length as header except all zeros (inside box)
+    var final = new Buffer(2+16); final.fill(0)
+    this.queue(box(final, nonce1, key))
+    this.queue(null)
+  })
+
+}
+exports.createUnboxStream =
+exports.createDecryptStream = function (key, nonce) {
+
+
+  if(key.length == 56) {
+    nonce = key.slice(32, 56)
+    key = key.slice(0, 32)
+  }
+  else if(!(key.length === 32 && nonce.length === 24))
+    throw new Error('nonce must be 24 bytes')
+
+  var reader = Reader(), first = true,  ended
+  var first = true
+
+  return function (read) {
+    reader(read)
+    return function (end, cb) {
+      if(end) return reader.abort(end, cb)
+      //use abort when the input was invalid,
+      //but the source hasn't actually ended yet.
+      function abort(err) {
+        reader.abort(ended = err || true, cb)
+      }
+
+      if(ended) return cb(ended)
+      reader.read(HEADER_LEN, function (err, cipherheader) {
+        if(err === true) return cb(ended = new Error('unexpected hangup'))
+        if(err) return cb(ended = err)
+
+        var header = unbox(cipherheader, nonce, key)
+
+        if(!header)
+          return abort(new Error('invalid header'))
+
+        //valid end of stream
+        if(isZeros(header))
+          return cb(ended = true)
+
+        var length = header.readUInt16BE(0)
+        var mac = header.slice(2, 34)
+
+        reader.read(length, function (err, cipherpacket) {
+          if(err) return cb(ended = err)
+          //recreate a valid packet
+          //TODO: PR to sodium bindings for detached box/open
+          var plainpacket = unbox_detached(mac, cipherpacket, increment(nonce), key)
+          if(!plainpacket)
+            return abort(new Error('invalid packet'))
+
+          increment(nonce)
+          cb(null, plainpacket)
+        })
+      })
+    }
+  }
+}
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11,"chloride":14,"increment-buffer":17,"pull-reader":31,"pull-through":64,"split-buffer":84}],27:[function(require,module,exports){
+var noop = function () {}
+
+function abortAll(ary, abort, cb) {
+  var n = ary.length
+  if(!n) return cb(abort)
+  ary.forEach(function (f) {
+    if(f) f(abort, next)
+    else next()
+  })
+
+  function next() {
+    if(--n) return
+    cb(abort)
+  }
+  if(!n) next()
+}
+
+module.exports = function (streams) {
+  return function (abort, cb) {
+    ;(function next () {
+      if(abort)
+        abortAll(streams, abort, cb)
+      else if(!streams.length)
+        cb(true)
+      else if(!streams[0])
+        streams.shift(), next()
+      else
+        streams[0](null, function (err, data) {
+          if(err) {
+            streams.shift() //drop the first, has already ended.
+            if(err === true) next()
+            else             abortAll(streams, err, cb)
+          }
+          else
+            cb(null, data)
+        })
+    })()
+  }
+}
+
+
+
+},{}],28:[function(require,module,exports){
+var Reader = require('pull-reader')
+var Writer = require('pull-pushable')
+var cat = require('pull-cat')
+var pair = require('pull-pair')
+
+function once (cb) {
+  var called = 0
+  return function (a, b, c) {
+    if(called++) return
+    cb(a, b, c)
+  }
+}
+
+function isFunction (f) {
+  return 'function' === typeof f
+}
+
+module.exports = function (opts, _cb) {
+  if(isFunction(opts)) _cb = opts, opts = {}
+  _cb = once(_cb || function noop () {})
+  var reader = Reader(opts && opts.timeout || 5e3)
+  var writer = Writer(function (err) {
+    if(err) _cb(err)
+  })
+
+  var p = pair()
+
+  return {
+    handshake: {
+      read: reader.read,
+      abort: function (err) {
+        writer.end(err)
+        reader.abort(err, function (err) {
+        })
+        _cb(err)
+      },
+      write: writer.push,
+      rest: function () {
+        writer.end()
+        return {
+          source: reader.read(),
+          sink: p.sink
+        }
+      }
+    },
+    sink: reader,
+    source: cat([writer, p.source])
+  }
+}
+
+},{"pull-cat":27,"pull-pair":29,"pull-pushable":30,"pull-reader":31}],29:[function(require,module,exports){
+'use strict'
+
+//a pair of pull streams where one drains from the other
+module.exports = function () {
+  var _read, waiting
+  function sink (read) {
+    if('function' !== typeof read)
+      throw new Error('read must be function')
+
+    if(_read)
+      throw new Error('already piped')
+    _read = read
+    if(waiting) {
+      var _waiting = waiting
+      waiting = null
+      _read.apply(null, _waiting)
+    }
+  }
+  function source (abort, cb) {
+    if(_read)
+      _read(abort, cb)
+    else
+      waiting = [abort, cb]
+  }
+
+  return {
+    source: source, sink: sink
+  }
+}
+
+
+},{}],30:[function(require,module,exports){
+module.exports = pullPushable
+
+function pullPushable (onClose) {
+  // create a buffer for data
+  // that have been pushed
+  // but not yet pulled.
+  var buffer = []
+
+  // a pushable is a source stream
+  // (abort, cb) => cb(end, data)
+  //
+  // when pushable is pulled,
+  // keep references to abort and cb
+  // so we can call back after
+  // .end(end) or .push(data)
+  var abort, cb
+  function read (_abort, _cb) {
+    if (_abort) {
+      abort = _abort
+      // if there is already a cb waiting, abort it.
+      if (cb) callback(abort)
+    }
+    cb = _cb
+    drain()
+  }
+
+  var ended
+  read.end = function (end) {
+    ended = ended || end || true
+    // attempt to drain
+    drain()
+  }
+
+  read.push = function (data) {
+    if (ended) return
+    // if sink already waiting,
+    // we can call back directly.
+    if (cb) {
+      callback(abort, data)
+      return
+    }
+    // otherwise push data and
+    // attempt to drain
+    buffer.push(data)
+    drain()
+  }
+
+  return read
+
+  // `drain` calls back to (if any) waiting
+  // sink with abort, end, or next data.
+  function drain () {
+    if (!cb) return
+
+    if (abort) callback(abort)
+    else if (!buffer.length && ended) callback(ended)
+    else if (buffer.length) callback(null, buffer.shift())
+  }
+
+  // `callback` calls back to waiting sink,
+  // and removes references to sink cb.
+  function callback (err, val) {
+    var _cb = cb
+    // if error and pushable passed onClose, call it
+    // the first time this stream ends or errors.
+    if (err && onClose) {
+      var c = onClose
+      onClose = null
+      c(err === true ? null : err)
+    }
+    cb = null
+    _cb(err, val)
+  }
+}
+
+},{}],31:[function(require,module,exports){
+'use strict'
+var State = require('./state')
+
+function isInteger (i) {
+  return Number.isFinite(i)
+}
+
+function isFunction (f) {
+  return 'function' === typeof f
+}
+
+function maxDelay(fn, delay) {
+  if(!delay) return fn
+  return function (a, cb) {
+    var timer = setTimeout(function () {
+      fn(new Error('pull-reader: read exceeded timeout'), cb)
+    }, delay)
+    fn(a, function (err, value) {
+      clearTimeout(timer)
+      cb(err, value)
+    })
+
+  }
+
+}
+
+module.exports = function (timeout) {
+
+  var queue = [], read, readTimed, reading = false
+  var state = State(), ended, streaming, abort
+
+  function drain () {
+    while (queue.length) {
+      if(null == queue[0].length && state.has(1)) {
+        queue.shift().cb(null, state.get())
+      }
+      else if(state.has(queue[0].length)) {
+        var next = queue.shift()
+        next.cb(null, state.get(next.length))
+      }
+      else if(ended)
+        queue.shift().cb(ended)
+      else
+        return !!queue.length
+    }
+    //always read a little data
+    return queue.length || !state.has(1) || abort
+  }
+
+  function more () {
+    var d = drain()
+    if(d && !reading)
+    if(read && !reading && !streaming) {
+      reading = true
+      readTimed (null, function (err, data) {
+        reading = false
+        if(err) {
+          ended = err
+          return drain()
+        }
+        state.add(data)
+        more()
+      })
+    }
+  }
+
+  function reader (_read) {
+    if(abort) {
+      while(queue.length) queue.shift().cb(abort)
+      return cb && cb(abort)
+    }
+    readTimed = maxDelay(_read, timeout)
+    read = _read
+    more()
+  }
+
+  reader.abort = function (err, cb) {
+    abort = err || true
+    if(read) {
+      reading = true
+      read(abort, function () {
+        while(queue.length) queue.shift().cb(abort)
+        cb && cb(abort)
+      })
+    }
+    else
+      cb()
+  }
+
+  reader.read = function (len, timeout, cb) {
+    if(isFunction(timeout))
+      cb = timeout, timeout = 0
+    if(isFunction(cb)) {
+      queue.push({length: isInteger(len) ? len : null, cb: cb})
+      more()
+    }
+    else {
+      //switch into streaming mode for the rest of the stream.
+      streaming = true
+      //wait for the current read to complete
+      return function (abort, cb) {
+        //if there is anything still in the queue,
+        if(reading || state.has(1)) {
+          if(abort) return read(abort, cb)
+          queue.push({length: null, cb: cb})
+          more()
+        }
+        else
+          maxDelay(read, timeout)(abort, function (err, data) {
+            cb(err, data)
+          })
+      }
+    }
+  }
+
+  return reader
+}
+
+
+
+
+
+
+},{"./state":32}],32:[function(require,module,exports){
+(function (Buffer){
+
+module.exports = function () {
+
+  var buffers = [], length = 0
+
+  //just used for debugging...
+  function calcLength () {
+    return buffers.reduce(function (a, b) {
+      return a + b.length
+    }, 0)
+  }
+
+  return {
+    length: length,
+    data: this,
+    add: function (data) {
+      if(!Buffer.isBuffer(data))
+        throw new Error('data must be a buffer, was: ' + JSON.stringify(data))
+      this.length = length = length + data.length
+      buffers.push(data)
+      return this
+    },
+    has: function (n) {
+      if(null == n) return length > 0
+      return length >= n
+    },
+    get: function (n) {
+      var _length
+      if(n == null || n === length) {
+        length = 0
+        var _buffers = buffers
+        buffers = []
+        if(_buffers.length == 1)
+          return _buffers[0]
+        else
+          return Buffer.concat(_buffers)
+      } else if (buffers.length > 1 && n <= (_length = buffers[0].length)) {
+        var buf = buffers[0].slice(0, n)
+        if(n === _length) {
+          buffers.shift()
+        }
+        else {
+          buffers[0] = buffers[0].slice(n, _length)
+        }
+        length -= n
+        return buf
+      }  else if(n < length) {
+        var out = [], len = 0
+
+        while((len + buffers[0].length) < n) {
+          var b = buffers.shift()
+          len += b.length
+          out.push(b)
+        }
+
+        if(len < n) {
+          out.push(buffers[0].slice(0, n - len))
+          buffers[0] = buffers[0].slice(n - len, buffers[0].length)
+          this.length = length = length - n
+        }
+        return Buffer.concat(out)
+      }
+      else
+        throw new Error('could not get ' + n + ' bytes')
+    }
+  }
+
+}
+
+
+
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11}],33:[function(require,module,exports){
+'use strict'
+
+var sources  = require('./sources')
+var sinks    = require('./sinks')
+var throughs = require('./throughs')
+
+exports = module.exports = require('./pull')
+
+for(var k in sources)
+  exports[k] = sources[k]
+
+for(var k in throughs)
+  exports[k] = throughs[k]
+
+for(var k in sinks)
+  exports[k] = sinks[k]
+
+
+},{"./pull":34,"./sinks":39,"./sources":46,"./throughs":55}],34:[function(require,module,exports){
+'use strict'
+
+module.exports = function pull (a) {
+  var length = arguments.length
+  if (typeof a === 'function' && a.length === 1) {
+    var args = new Array(length)
+    for(var i = 0; i < length; i++)
+      args[i] = arguments[i]
+    return function (read) {
+      args.unshift(read)
+      return pull.apply(null, args)
+    }
+  }
+
+  var read = a
+
+  if (read && typeof read.source === 'function') {
+    read = read.source
+  }
+
+  for (var i = 1; i < length; i++) {
+    var s = arguments[i]
+    if (typeof s === 'function') {
+      read = s(read)
+    } else if (s && typeof s === 'object') {
+      s.sink(read)
+      read = s.source
+    }
+  }
+
+  return read
+}
+
+
+
+
+
+
+},{}],35:[function(require,module,exports){
+'use strict'
+
+var reduce = require('./reduce')
+
+module.exports = function collect (cb) {
+  return reduce(function (arr, item) {
+    arr.push(item)
+    return arr
+  }, [], cb)
+}
+
+},{"./reduce":42}],36:[function(require,module,exports){
+'use strict'
+
+var reduce = require('./reduce')
+
+module.exports = function concat (cb) {
+  return reduce(function (a, b) {
+    return a + b
+  }, '', cb)
+}
+
+},{"./reduce":42}],37:[function(require,module,exports){
+'use strict'
+
+module.exports = function drain (op, done) {
+  var read, abort
+
+  function sink (_read) {
+    read = _read
+    if(abort) return sink.abort()
+    //this function is much simpler to write if you
+    //just use recursion, but by using a while loop
+    //we do not blow the stack if the stream happens to be sync.
+    ;(function next() {
+        var loop = true, cbed = false
+        while(loop) {
+          cbed = false
+          read(null, function (end, data) {
+            cbed = true
+            if(end = end || abort) {
+              loop = false
+              if(done) done(end === true ? null : end)
+              else if(end && end !== true)
+                throw end
+            }
+            else if(op && false === op(data) || abort) {
+              loop = false
+              read(abort || true, done || function () {})
+            }
+            else if(!loop){
+              next()
+            }
+          })
+          if(!cbed) {
+            loop = false
+            return
+          }
+        }
+      })()
+  }
+
+  sink.abort = function (err, cb) {
+    if('function' == typeof err)
+      cb = err, err = true
+    abort = err || true
+    if(read) return read(abort, cb || function () {})
+  }
+
+  return sink
+}
+
+},{}],38:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+var drain = require('./drain')
+
+module.exports = function find (test, cb) {
+  var ended = false
+  if(!cb)
+    cb = test, test = id
+  else
+    test = prop(test) || id
+
+  return drain(function (data) {
+    if(test(data)) {
+      ended = true
+      cb(null, data)
+    return false
+    }
+  }, function (err) {
+    if(ended) return //already called back
+    cb(err === true ? null : err, null)
+  })
+}
+
+
+
+
+
+},{"../util/prop":62,"./drain":37}],39:[function(require,module,exports){
+'use strict'
+
+module.exports = {
+  drain: require('./drain'),
+  onEnd: require('./on-end'),
+  log: require('./log'),
+  find: require('./find'),
+  reduce: require('./reduce'),
+  collect: require('./collect'),
+  concat: require('./concat')
+}
+
+
+},{"./collect":35,"./concat":36,"./drain":37,"./find":38,"./log":40,"./on-end":41,"./reduce":42}],40:[function(require,module,exports){
+'use strict'
+
+var drain = require('./drain')
+
+module.exports = function log (done) {
+  return drain(function (data) {
+    console.log(data)
+  }, done)
+}
+
+},{"./drain":37}],41:[function(require,module,exports){
+'use strict'
+
+var drain = require('./drain')
+
+module.exports = function onEnd (done) {
+  return drain(null, done)
+}
+
+},{"./drain":37}],42:[function(require,module,exports){
+'use strict'
+
+var drain = require('./drain')
+
+module.exports = function reduce (reducer, acc, cb) {
+  return drain(function (data) {
+    acc = reducer(acc, data)
+  }, function (err) {
+    cb(err, acc)
+  })
+}
+
+
+},{"./drain":37}],43:[function(require,module,exports){
+'use strict'
+
+module.exports = function count (max) {
+  var i = 0; max = max || Infinity
+  return function (end, cb) {
+    if(end) return cb && cb(end)
+    if(i > max)
+      return cb(true)
+    cb(null, i++)
+  }
+}
+
+
+
+},{}],44:[function(require,module,exports){
+'use strict'
+//a stream that ends immediately.
+module.exports = function empty () {
+  return function (abort, cb) {
+    cb(true)
+  }
+}
+
+},{}],45:[function(require,module,exports){
+'use strict'
+//a stream that errors immediately.
+module.exports = function error (err) {
+  return function (abort, cb) {
+    cb(err)
+  }
+}
+
+
+},{}],46:[function(require,module,exports){
+'use strict'
+module.exports = {
+  keys: require('./keys'),
+  once: require('./once'),
+  values: require('./values'),
+  count: require('./count'),
+  infinite: require('./infinite'),
+  empty: require('./empty'),
+  error: require('./error')
+}
+
+},{"./count":43,"./empty":44,"./error":45,"./infinite":47,"./keys":48,"./once":49,"./values":50}],47:[function(require,module,exports){
+'use strict'
+module.exports = function infinite (generate) {
+  generate = generate || Math.random
+  return function (end, cb) {
+    if(end) return cb && cb(end)
+    return cb(null, generate())
+  }
+}
+
+
+
+},{}],48:[function(require,module,exports){
+'use strict'
+var values = require('./values')
+module.exports = function (object) {
+  return values(Object.keys(object))
+}
+
+
+
+},{"./values":50}],49:[function(require,module,exports){
+'use strict'
+var abortCb = require('../util/abort-cb')
+
+module.exports = function once (value, onAbort) {
+  return function (abort, cb) {
+    if(abort)
+      return abortCb(cb, abort, onAbort)
+    if(value != null) {
+      var _value = value; value = null
+      cb(null, _value)
+    } else
+      cb(true)
+  }
+}
+
+
+
+},{"../util/abort-cb":61}],50:[function(require,module,exports){
+'use strict'
+var abortCb = require('../util/abort-cb')
+
+module.exports = function values (array, onAbort) {
+  if(!array)
+    return function (abort, cb) {
+      if(abort) return abortCb(cb, abort, onAbort)
+      return cb(true)
+    }
+  if(!Array.isArray(array))
+    array = Object.keys(array).map(function (k) {
+      return array[k]
+    })
+  var i = 0
+  return function (abort, cb) {
+    if(abort)
+      return abortCb(cb, abort, onAbort)
+    cb(i >= array.length || null, array[i++])
+  }
+}
+
+
+},{"../util/abort-cb":61}],51:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+
+module.exports = function asyncMap (map) {
+  if(!map) return id
+  map = prop(map)
+  var busy = false, abortCb, aborted
+  return function (read) {
+    return function next (abort, cb) {
+      if(aborted) return cb(aborted)
+      if(abort) {
+        aborted = abort
+        if(!busy) read(abort, cb)
+        else read(abort, function () {
+          //if we are still busy, wait for the mapper to complete.
+          if(busy) abortCb = cb
+          else cb(abort)
+        })
+      }
+      else
+        read(null, function (end, data) {
+          if(end) cb(end)
+          else if(aborted) cb(aborted)
+          else {
+            busy = true
+            map(data, function (err, data) {
+              busy = false
+              if(aborted) {
+                cb(aborted)
+                abortCb(aborted)
+              }
+              else if(err) next (err, cb)
+              else cb(null, data)
+            })
+          }
+        })
+    }
+  }
+}
+
+
+
+},{"../util/prop":62}],52:[function(require,module,exports){
+'use strict'
+
+var tester = require('../util/tester')
+var filter = require('./filter')
+
+module.exports = function filterNot (test) {
+  test = tester(test)
+  return filter(function (data) { return !test(data) })
+}
+
+},{"../util/tester":63,"./filter":53}],53:[function(require,module,exports){
+'use strict'
+
+var tester = require('../util/tester')
+
+module.exports = function filter (test) {
+  //regexp
+  test = tester(test)
+  return function (read) {
+    return function next (end, cb) {
+      var sync, loop = true
+      while(loop) {
+        loop = false
+        sync = true
+        read(end, function (end, data) {
+          if(!end && !test(data))
+            return sync ? loop = true : next(end, cb)
+          cb(end, data)
+        })
+        sync = false
+      }
+    }
+  }
+}
+
+
+},{"../util/tester":63}],54:[function(require,module,exports){
+'use strict'
+
+var values = require('../sources/values')
+var once = require('../sources/once')
+
+//convert a stream of arrays or streams into just a stream.
+module.exports = function flatten () {
+  return function (read) {
+    var _read
+    return function (abort, cb) {
+      if (abort) { //abort the current stream, and then stream of streams.
+        _read ? _read(abort, function(err) {
+          read(err || abort, cb)
+        }) : read(abort, cb)
+      }
+      else if(_read) nextChunk()
+      else nextStream()
+
+      function nextChunk () {
+        _read(null, function (err, data) {
+          if (err === true) nextStream()
+          else if (err) {
+            read(true, function(abortErr) {
+              // TODO: what do we do with the abortErr?
+              cb(err)
+            })
+          }
+          else cb(null, data)
+        })
+      }
+      function nextStream () {
+        _read = null
+        read(null, function (end, stream) {
+          if(end)
+            return cb(end)
+          if(Array.isArray(stream) || stream && 'object' === typeof stream)
+            stream = values(stream)
+          else if('function' != typeof stream)
+            stream = once(stream)
+          _read = stream
+          nextChunk()
+        })
+      }
+    }
+  }
+}
+
+
+},{"../sources/once":49,"../sources/values":50}],55:[function(require,module,exports){
+'use strict'
+
+module.exports = {
+  map: require('./map'),
+  asyncMap: require('./async-map'),
+  filter: require('./filter'),
+  filterNot: require('./filter-not'),
+  through: require('./through'),
+  take: require('./take'),
+  unique: require('./unique'),
+  nonUnique: require('./non-unique'),
+  flatten: require('./flatten')
+}
+
+
+
+
+},{"./async-map":51,"./filter":53,"./filter-not":52,"./flatten":54,"./map":56,"./non-unique":57,"./take":58,"./through":59,"./unique":60}],56:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+
+module.exports = function map (mapper) {
+  if(!mapper) return id
+  mapper = prop(mapper)
+  return function (read) {
+    return function (abort, cb) {
+      read(abort, function (end, data) {
+        try {
+        data = !end ? mapper(data) : null
+        } catch (err) {
+          return read(err, function () {
+            return cb(err)
+          })
+        }
+        cb(end, data)
+      })
+    }
+  }
+}
+
+},{"../util/prop":62}],57:[function(require,module,exports){
+'use strict'
+
+var unique = require('./unique')
+
+//passes an item through when you see it for the second time.
+module.exports = function nonUnique (field) {
+  return unique(field, true)
+}
+
+},{"./unique":60}],58:[function(require,module,exports){
+'use strict'
+
+//read a number of items and then stop.
+module.exports = function take (test, opts) {
+  opts = opts || {}
+  var last = opts.last || false // whether the first item for which !test(item) should still pass
+  var ended = false
+  if('number' === typeof test) {
+    last = true
+    var n = test; test = function () {
+      return --n
+    }
+  }
+
+  return function (read) {
+
+    function terminate (cb) {
+      read(true, function (err) {
+        last = false; cb(err || true)
+      })
+    }
+
+    return function (end, cb) {
+      if(ended)            last ? terminate(cb) : cb(ended)
+      else if(ended = end) read(ended, cb)
+      else
+        read(null, function (end, data) {
+          if(ended = ended || end) {
+            //last ? terminate(cb) :
+            cb(ended)
+          }
+          else if(!test(data)) {
+            ended = true
+            last ? cb(null, data) : terminate(cb)
+          }
+          else
+            cb(null, data)
+        })
+    }
+  }
+}
+
+},{}],59:[function(require,module,exports){
+'use strict'
+
+//a pass through stream that doesn't change the value.
+module.exports = function through (op, onEnd) {
+  var a = false
+
+  function once (abort) {
+    if(a || !onEnd) return
+    a = true
+    onEnd(abort === true ? null : abort)
+  }
+
+  return function (read) {
+    return function (end, cb) {
+      if(end) once(end)
+      return read(end, function (end, data) {
+        if(!end) op && op(data)
+        else once(end)
+        cb(end, data)
+      })
+    }
+  }
+}
+
+},{}],60:[function(require,module,exports){
+'use strict'
+
+function id (e) { return e }
+var prop = require('../util/prop')
+var filter = require('./filter')
+
+//drop items you have already seen.
+module.exports = function unique (field, invert) {
+  field = prop(field) || id
+  var seen = {}
+  return filter(function (data) {
+    var key = field(data)
+    if(seen[key]) return !!invert //false, by default
+    else seen[key] = true
+    return !invert //true by default
+  })
+}
+
+
+},{"../util/prop":62,"./filter":53}],61:[function(require,module,exports){
+module.exports = function abortCb(cb, abort, onAbort) {
+  cb(abort)
+  onAbort && onAbort(abort === true ? null: abort)
+  return
+}
+
+
+},{}],62:[function(require,module,exports){
+module.exports = function prop (key) {
+  return key && (
+    'string' == typeof key
+    ? function (data) { return data[key] }
+    : 'object' === typeof key && 'function' === typeof key.exec //regexp
+    ? function (data) { var v = key.exec(data); return v && v[0] }
+    : key
+  )
+}
+
+},{}],63:[function(require,module,exports){
+var prop = require('./prop')
+
+function id (e) { return e }
+
+module.exports = function tester (test) {
+  return (
+    'object' === typeof test && 'function' === typeof test.test //regexp
+    ? function (data) { return test.test(data) }
+    : prop (test) || id
+  )
+}
+
+},{"./prop":62}],64:[function(require,module,exports){
+var looper = require('looper')
+
+module.exports = function (writer, ender) {
+  return function (read) {
+    var queue = [], ended, error
+
+    function enqueue (data) {
+      queue.push(data)
+    }
+
+    writer = writer || function (data) {
+      this.queue(data)
+    }
+
+    ender = ender || function () {
+      this.queue(null)
+    }
+
+    var emitter = {
+      emit: function (event, data) {
+        if(event == 'data') enqueue(data)
+        if(event == 'end')  ended = true, enqueue(null)
+        if(event == 'error') error = data
+      },
+      queue: enqueue
+    }
+    var _cb
+    return function (end, cb) {
+      ended = ended || end
+      if(end)
+        return read(end, function () {
+          if(_cb) {
+            var t = _cb; _cb = null; t(end)
+          }
+          cb(end)
+        })
+
+      _cb = cb
+      looper(function pull (next) {
+        //if it's an error
+        if(!_cb) return
+        cb = _cb
+        if(error) _cb = null, cb(error)
+        else if(queue.length) {
+          var data = queue.shift()
+          _cb = null,cb(data === null, data)
+        }
+        else {
+          read(ended, function (end, data) {
+             //null has no special meaning for pull-stream
+            if(end && end !== true) {
+              error = end; return next()
+            }
+            if(ended = ended || end)  ender.call(emitter)
+            else if(data !== null) {
+              writer.call(emitter, data)
+              if(error || ended)
+                return read(error || ended, function () {
+                  _cb = null; cb(error || ended)
+                })
+            }
+            next(pull)
+          })
+        }
+      })
+    }
+  }
+}
+
+
+},{"looper":23}],65:[function(require,module,exports){
+'use strict';
+
+//load websocket library if we are not in the browser
+var WebSocket = require('./web-socket')
+var duplex = require('./duplex')
+var wsurl = require('./ws-url')
+
+function isFunction (f) {
+  return 'function' === typeof f
+}
+
+module.exports = function (addr, opts) {
+  var stream
+  if(isFunction(opts)) opts = {onConnect: opts}
+
+  var location = typeof window === 'undefined' ? {} : window.location
+
+  var url = wsurl(addr, location)
+  var socket = new WebSocket(url)
+  stream = duplex(socket, opts)
+  stream.remoteAddress = url
+
+  stream.close = function (cb) {
+    if (cb && typeof cb == 'function')
+      socket.addEventListener('close', cb)
+    socket.close()
+  }
+
+  return stream
+}
+
+module.exports.connect = module.exports
+
+},{"./duplex":66,"./web-socket":70,"./ws-url":71}],66:[function(require,module,exports){
+var source = require('./source')
+var sink = require('./sink')
+
+module.exports = duplex
+
+function duplex (ws, opts) {
+  var req = ws.upgradeReq || {}
+  if(opts && opts.binaryType)
+    ws.binaryType = opts.binaryType
+  else if(opts && opts.binary)
+    ws.binaryType = 'arraybuffer'
+  return {
+    source: source(ws, opts && opts.onConnect),
+    sink: sink(ws, opts),
+
+    //http properties - useful for routing or auth.
+    headers: req.headers,
+    url: req.url,
+    upgrade: req.upgrade,
+    method: req.method
+  };
+};
+
+
+},{"./sink":68,"./source":69}],67:[function(require,module,exports){
+module.exports = function(socket, callback) {
+  var remove = socket && (socket.removeEventListener || socket.removeListener);
+
+  function cleanup () {
+    if (typeof remove == 'function') {
+      remove.call(socket, 'open', handleOpen);
+      remove.call(socket, 'error', handleErr);
+    }
+  }
+
+  function handleOpen(evt) {
+    cleanup(); callback();
+  }
+
+  function handleErr (evt) {
+    cleanup(); callback(evt);
+  }
+
+  // if the socket is closing or closed, return end
+  if (socket.readyState >= 2) {
+    return callback(true);
+  }
+
+  // if open, trigger the callback
+  if (socket.readyState === 1) {
+    return callback();
+  }
+
+  socket.addEventListener('open', handleOpen);
+  socket.addEventListener('error', handleErr);
+};
+
+},{}],68:[function(require,module,exports){
+(function (process){
+var ready = require('./ready');
+
+/**
+  ### `sink(socket, opts?)`
+
+  Create a pull-stream `Sink` that will write data to the `socket`.
+
+  <<< examples/write.js
+
+**/
+module.exports = function(socket, opts) {
+  return function (read) {
+    opts = opts || {}
+    var closeOnEnd = opts.closeOnEnd !== false;
+    var onClose = 'function' === typeof opts ? opts : opts.onClose;
+
+    function next(end, data) {
+      // if the stream has ended, simply return
+      if (end) {
+        if (closeOnEnd && socket.readyState <= 1) {
+          if(onClose)
+            socket.addEventListener('close', function (ev) {
+              if(ev.wasClean || ev.code === 1006) onClose()
+              else {
+                console.log(ev)
+                var err = new Error('ws error')
+                err.event = ev
+                onClose(err)
+              }
+            });
+
+          socket.close()
+        }
+
+        return;
+      }
+
+      // socket ready?
+      ready(socket, function(end) {
+        if (end) {
+          return read(end, function () {});
+        }
+
+        socket.send(data);
+        process.nextTick(function() {
+          read(null, next);
+        });
+      });
+    }
+
+    read(null, next);
+  }
+}
+
+
+
+
+}).call(this,require('_process'))
+},{"./ready":67,"_process":25}],69:[function(require,module,exports){
+/**
+  ### `source(socket)`
+
+  Create a pull-stream `Source` that will read data from the `socket`.
+
+  <<< examples/read.js
+
+**/
+
+module.exports = function(socket, cb) {
+  var buffer = [];
+  var receiver;
+  var ended;
+  var started = false;
+  socket.addEventListener('message', function(evt) {
+    if (receiver) {
+      return receiver(null, evt.data);
+    }
+
+    buffer.push(evt.data);
+  });
+
+  socket.addEventListener('close', function(evt) {
+    if (ended) return
+    if (receiver) {
+      receiver(ended = true)
+    }
+  });
+
+  socket.addEventListener('error', function (evt) {
+    if (ended) return;
+    ended = evt;
+    if(!started) {
+      started = true
+      cb && cb(evt)
+    }
+    if (receiver) {
+      receiver(ended)
+    }
+  });
+
+  socket.addEventListener('open', function (evt) {
+    if(started || ended) return
+    started = true
+    cb && cb()
+  })
+
+  function read(abort, cb) {
+    receiver = null;
+
+    //if stream has already ended.
+    if (ended)
+      return cb(ended);
+
+    // if ended, abort
+    else if (abort) {
+      //this will callback when socket closes
+      receiver = cb
+      socket.close()
+    }
+
+    // return data, if any
+    else if(buffer.length > 0)
+      cb(null, buffer.shift());
+
+    // wait for more data (or end)
+    else
+      receiver = cb;
+
+  };
+
+  return read;
+};
+
+
+
+
+
+},{}],70:[function(require,module,exports){
+
+module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
+
+},{"ws":9}],71:[function(require,module,exports){
+var rurl = require('relative-url')
+var map = {http:'ws', https:'wss'}
+var def = 'ws'
+module.exports = function (url, location) {
+  return rurl(url, location, map, def)
+}
+
+
+
+},{"relative-url":76}],72:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -3064,7 +6223,7 @@ process.umask = function() { return 0; };
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],16:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3150,7 +6309,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],17:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -3237,1093 +6396,483 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],18:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":16,"./encode":17}],19:[function(require,module,exports){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
+},{"./decode":73,"./encode":74}],76:[function(require,module,exports){
 
-'use strict';
+//normalize a ws url.
+var URL = require('url')
+module.exports = function (url, location, protocolMap, defaultProtocol) {
+  protocolMap = protocolMap ||{}
+  /*
 
-var punycode = require('punycode');
-var util = require('./util');
+  https://nodejs.org/dist/latest-v6.x/docs/api/url.html#url_url_parse_urlstr_parsequerystring_slashesdenotehost
 
-exports.parse = urlParse;
-exports.resolve = urlResolve;
-exports.resolveObject = urlResolveObject;
-exports.format = urlFormat;
+  I didn't know this, but url.parse takes a 3rd
+  argument which interprets "//foo.com" as the hostname,
+  but without the protocol. by default, // is interpreted
+  as the path.
 
-exports.Url = Url;
+  that lets us do what the wsurl module does.
+  https://www.npmjs.com/package/wsurl
 
-function Url() {
-  this.protocol = null;
-  this.slashes = null;
-  this.auth = null;
-  this.host = null;
-  this.port = null;
-  this.hostname = null;
-  this.hash = null;
-  this.search = null;
-  this.query = null;
-  this.pathname = null;
-  this.path = null;
-  this.href = null;
-}
+  but most of the time, I want to write js
+  that will work on localhost, and will work
+  on a server...
 
-// Reference: RFC 3986, RFC 1808, RFC 2396
+  so I want to just do createWebSocket('/')
+  and get "ws://mydomain.com/"
 
-// define these here so at least they only have to be
-// compiled once on the first module load.
-var protocolPattern = /^([a-z0-9.+-]+:)/i,
-    portPattern = /:[0-9]*$/,
+  */
 
-    // Special case for a simple path URL
-    simplePathPattern = /^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/,
+  var url = URL.parse(url, false, true)
 
-    // RFC 2396: characters reserved for delimiting URLs.
-    // We actually just auto-escape these.
-    delims = ['<', '>', '"', '`', ' ', '\r', '\n', '\t'],
-
-    // RFC 2396: characters not allowed for various reasons.
-    unwise = ['{', '}', '|', '\\', '^', '`'].concat(delims),
-
-    // Allowed by RFCs, but cause of XSS attacks.  Always escape these.
-    autoEscape = ['\''].concat(unwise),
-    // Characters that are never ever allowed in a hostname.
-    // Note that any invalid chars are also handled, but these
-    // are the ones that are *expected* to be seen, so we fast-path
-    // them.
-    nonHostChars = ['%', '/', '?', ';', '#'].concat(autoEscape),
-    hostEndingChars = ['/', '?', '#'],
-    hostnameMaxLen = 255,
-    hostnamePartPattern = /^[+a-z0-9A-Z_-]{0,63}$/,
-    hostnamePartStart = /^([+a-z0-9A-Z_-]{0,63})(.*)$/,
-    // protocols that can allow "unsafe" and "unwise" chars.
-    unsafeProtocol = {
-      'javascript': true,
-      'javascript:': true
-    },
-    // protocols that never have a hostname.
-    hostlessProtocol = {
-      'javascript': true,
-      'javascript:': true
-    },
-    // protocols that always contain a // bit.
-    slashedProtocol = {
-      'http': true,
-      'https': true,
-      'ftp': true,
-      'gopher': true,
-      'file': true,
-      'http:': true,
-      'https:': true,
-      'ftp:': true,
-      'gopher:': true,
-      'file:': true
-    },
-    querystring = require('querystring');
-
-function urlParse(url, parseQueryString, slashesDenoteHost) {
-  if (url && util.isObject(url) && url instanceof Url) return url;
-
-  var u = new Url;
-  u.parse(url, parseQueryString, slashesDenoteHost);
-  return u;
-}
-
-Url.prototype.parse = function(url, parseQueryString, slashesDenoteHost) {
-  if (!util.isString(url)) {
-    throw new TypeError("Parameter 'url' must be a string, not " + typeof url);
+  var proto
+  if(url.protocol) proto = url.protocol
+  else {
+    proto = location.protocol ? location.protocol.replace(/:$/,'') : 'http'
+    proto = ((protocolMap)[proto] || defaultProtocol || proto) + ':'
   }
 
-  // Copy chrome, IE, opera backslash-handling behavior.
-  // Back slashes before the query string get converted to forward slashes
-  // See: https://code.google.com/p/chromium/issues/detail?id=25916
-  var queryIndex = url.indexOf('?'),
-      splitter =
-          (queryIndex !== -1 && queryIndex < url.indexOf('#')) ? '?' : '#',
-      uSplit = url.split(splitter),
-      slashRegex = /\\/g;
-  uSplit[0] = uSplit[0].replace(slashRegex, '/');
-  url = uSplit.join(splitter);
+  //handle quirk in url package
+  if(url.host && url.host[0] === ':')
+    url.host = null
 
-  var rest = url;
+  //useful for websockets
+  if(url.hostname) {
+    return URL.format({
+      protocol: proto,
+      slashes: true,
+      hostname: url.hostname,
+      port: url.port,
+      pathname: url.pathname,
+      search: url.search
+    })
+  }
+  else url.host = location.host
 
-  // trim before proceeding.
-  // This is to support parse stuff like "  http://foo.com  \n"
-  rest = rest.trim();
+  //included for completeness. would you want to do this?
+  if(url.port) {
+    return URL.format({
+      protocol: proto,
+      slashes: true,
+      host: location.hostname + ':' + url.port,
+      port: url.port,
+      pathname: url.pathname,
+      search: url.search
+    })
+  }
 
-  if (!slashesDenoteHost && url.split('#').length === 1) {
-    // Try fast path regexp
-    var simplePath = simplePathPattern.exec(rest);
-    if (simplePath) {
-      this.path = rest;
-      this.href = rest;
-      this.pathname = simplePath[1];
-      if (simplePath[2]) {
-        this.search = simplePath[2];
-        if (parseQueryString) {
-          this.query = querystring.parse(this.search.substr(1));
-        } else {
-          this.query = this.search.substr(1);
+  //definately useful for websockets
+  if(url.pathname) {
+    return URL.format({
+      protocol: proto,
+      slashes: true,
+      host: url.host,
+      pathname: url.pathname,
+      search: url.search
+    })
+  }
+  else
+    url.pathname = location.pathname
+
+  //included for completeness. would you want to do this?
+  if(url.search) {
+    return URL.format({
+      protocol: proto,
+      slashes: true,
+      host: url.host,
+      pathname: url.pathname,
+      search: url.search
+    })
+  }
+  else url.search = location.search
+
+  return url.format(url)
+}
+
+
+
+
+
+
+},{"url":87}],77:[function(require,module,exports){
+var pull = require('pull-stream')
+
+var Handshake = require('pull-handshake')
+var State = require('./state')
+
+var challenge_length = 64
+var client_auth_length = 16+32+64
+var server_auth_length = 16+64
+var mac_length = 16
+
+//client is Alice
+//create the client stream with the public key you expect to connect to.
+exports.client =
+exports.createClientStream = function (alice, app_key, timeout) {
+
+  return function (bob_pub, seed, cb) {
+    if('function' == typeof seed)
+      cb = seed, seed = null
+
+    //alice may be null.
+    var state = new State(app_key, alice, bob_pub, seed)
+
+    var stream = Handshake({timeout: timeout}, cb)
+    var shake = stream.handshake
+    delete stream.handshake
+
+    function abort(err, reason) {
+      if(err && err !== true) shake.abort(err, cb)
+      else                    shake.abort(new Error(reason), cb)
+    }
+
+    shake.write(state.createChallenge())
+
+    shake.read(challenge_length, function (err, msg) {
+      if(err) return abort(err, 'challenge not accepted')
+      //create the challenge first, because we need to generate a local key
+      if(!state.verifyChallenge(msg))
+        return abort(null, 'wrong protocol (version?)')
+
+      shake.write(state.createClientAuth())
+
+      shake.read(server_auth_length, function (err, boxed_sig) {
+        if(err) return abort(err, 'hello not accepted')
+
+        if(!state.verifyServerAccept(boxed_sig))
+          return abort(null, 'server not authenticated')
+
+        cb(null, shake.rest(), state.cleanSecrets())
+      })
+    })
+
+    return stream
+  }
+}
+
+//server is Bob.
+exports.server =
+exports.createServerStream = function (bob, authorize, app_key, timeout) {
+
+  return function (cb) {
+    var state = new State(app_key, bob)
+    var stream = Handshake({timeout: timeout}, cb)
+
+    var shake = stream.handshake
+    delete stream.handshake
+
+    function abort (err, reason) {
+      if(err && err !== true) shake.abort(err, cb)
+      else                    shake.abort(new Error(reason), cb)
+    }
+
+    shake.read(challenge_length, function (err, challenge) {
+      if(err) return abort(err, 'expected challenge')
+      if(!state.verifyChallenge(challenge))
+        return shake.abort(new Error('wrong protocol/version'))
+
+      shake.write(state.createChallenge())
+      shake.read(client_auth_length, function (err, hello) {
+        if(err) return abort(err, 'expected hello')
+        if(!state.verifyClientAuth(hello)) {
+          //we know who the client was, but chose not to answer:
+          if(state.remote.public)
+            return abort(null, 'unauthenticated client:' + state.remote.public.toString('hex'), cb)
+          //client dialed wrong number... (we don't know who they where)
+          else
+            return abort(null, 'wrong number')
         }
-      } else if (parseQueryString) {
-        this.search = '';
-        this.query = {};
-      }
-      return this;
-    }
+        //check if the user wants to speak to alice.
+        authorize(state.remote.public, function (err, auth) {
+          if(auth == null && !err) err = new Error('client unauthorized')
+          if(!auth) return abort(err, 'client authentication rejected')
+          state.auth = auth
+          shake.write(state.createServerAccept())
+          cb(null, shake.rest(), state.cleanSecrets())
+        })
+      })
+    })
+    return stream
   }
-
-  var proto = protocolPattern.exec(rest);
-  if (proto) {
-    proto = proto[0];
-    var lowerProto = proto.toLowerCase();
-    this.protocol = lowerProto;
-    rest = rest.substr(proto.length);
-  }
-
-  // figure out if it's got a host
-  // user@server is *always* interpreted as a hostname, and url
-  // resolution will treat //foo/bar as host=foo,path=bar because that's
-  // how the browser resolves relative URLs.
-  if (slashesDenoteHost || proto || rest.match(/^\/\/[^@\/]+@[^@\/]+/)) {
-    var slashes = rest.substr(0, 2) === '//';
-    if (slashes && !(proto && hostlessProtocol[proto])) {
-      rest = rest.substr(2);
-      this.slashes = true;
-    }
-  }
-
-  if (!hostlessProtocol[proto] &&
-      (slashes || (proto && !slashedProtocol[proto]))) {
-
-    // there's a hostname.
-    // the first instance of /, ?, ;, or # ends the host.
-    //
-    // If there is an @ in the hostname, then non-host chars *are* allowed
-    // to the left of the last @ sign, unless some host-ending character
-    // comes *before* the @-sign.
-    // URLs are obnoxious.
-    //
-    // ex:
-    // http://a@b@c/ => user:a@b host:c
-    // http://a@b?@c => user:a host:c path:/?@c
-
-    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
-    // Review our test case against browsers more comprehensively.
-
-    // find the first instance of any hostEndingChars
-    var hostEnd = -1;
-    for (var i = 0; i < hostEndingChars.length; i++) {
-      var hec = rest.indexOf(hostEndingChars[i]);
-      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
-        hostEnd = hec;
-    }
-
-    // at this point, either we have an explicit point where the
-    // auth portion cannot go past, or the last @ char is the decider.
-    var auth, atSign;
-    if (hostEnd === -1) {
-      // atSign can be anywhere.
-      atSign = rest.lastIndexOf('@');
-    } else {
-      // atSign must be in auth portion.
-      // http://a@b/c@d => host:b auth:a path:/c@d
-      atSign = rest.lastIndexOf('@', hostEnd);
-    }
-
-    // Now we have a portion which is definitely the auth.
-    // Pull that off.
-    if (atSign !== -1) {
-      auth = rest.slice(0, atSign);
-      rest = rest.slice(atSign + 1);
-      this.auth = decodeURIComponent(auth);
-    }
-
-    // the host is the remaining to the left of the first non-host char
-    hostEnd = -1;
-    for (var i = 0; i < nonHostChars.length; i++) {
-      var hec = rest.indexOf(nonHostChars[i]);
-      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
-        hostEnd = hec;
-    }
-    // if we still have not hit it, then the entire thing is a host.
-    if (hostEnd === -1)
-      hostEnd = rest.length;
-
-    this.host = rest.slice(0, hostEnd);
-    rest = rest.slice(hostEnd);
-
-    // pull out port.
-    this.parseHost();
-
-    // we've indicated that there is a hostname,
-    // so even if it's empty, it has to be present.
-    this.hostname = this.hostname || '';
-
-    // if hostname begins with [ and ends with ]
-    // assume that it's an IPv6 address.
-    var ipv6Hostname = this.hostname[0] === '[' &&
-        this.hostname[this.hostname.length - 1] === ']';
-
-    // validate a little.
-    if (!ipv6Hostname) {
-      var hostparts = this.hostname.split(/\./);
-      for (var i = 0, l = hostparts.length; i < l; i++) {
-        var part = hostparts[i];
-        if (!part) continue;
-        if (!part.match(hostnamePartPattern)) {
-          var newpart = '';
-          for (var j = 0, k = part.length; j < k; j++) {
-            if (part.charCodeAt(j) > 127) {
-              // we replace non-ASCII char with a temporary placeholder
-              // we need this to make sure size of hostname is not
-              // broken by replacing non-ASCII by nothing
-              newpart += 'x';
-            } else {
-              newpart += part[j];
-            }
-          }
-          // we test again with ASCII char only
-          if (!newpart.match(hostnamePartPattern)) {
-            var validParts = hostparts.slice(0, i);
-            var notHost = hostparts.slice(i + 1);
-            var bit = part.match(hostnamePartStart);
-            if (bit) {
-              validParts.push(bit[1]);
-              notHost.unshift(bit[2]);
-            }
-            if (notHost.length) {
-              rest = '/' + notHost.join('.') + rest;
-            }
-            this.hostname = validParts.join('.');
-            break;
-          }
-        }
-      }
-    }
-
-    if (this.hostname.length > hostnameMaxLen) {
-      this.hostname = '';
-    } else {
-      // hostnames are always lower case.
-      this.hostname = this.hostname.toLowerCase();
-    }
-
-    if (!ipv6Hostname) {
-      // IDNA Support: Returns a punycoded representation of "domain".
-      // It only converts parts of the domain name that
-      // have non-ASCII characters, i.e. it doesn't matter if
-      // you call it with a domain that already is ASCII-only.
-      this.hostname = punycode.toASCII(this.hostname);
-    }
-
-    var p = this.port ? ':' + this.port : '';
-    var h = this.hostname || '';
-    this.host = h + p;
-    this.href += this.host;
-
-    // strip [ and ] from the hostname
-    // the host field still retains them, though
-    if (ipv6Hostname) {
-      this.hostname = this.hostname.substr(1, this.hostname.length - 2);
-      if (rest[0] !== '/') {
-        rest = '/' + rest;
-      }
-    }
-  }
-
-  // now rest is set to the post-host stuff.
-  // chop off any delim chars.
-  if (!unsafeProtocol[lowerProto]) {
-
-    // First, make 100% sure that any "autoEscape" chars get
-    // escaped, even if encodeURIComponent doesn't think they
-    // need to be.
-    for (var i = 0, l = autoEscape.length; i < l; i++) {
-      var ae = autoEscape[i];
-      if (rest.indexOf(ae) === -1)
-        continue;
-      var esc = encodeURIComponent(ae);
-      if (esc === ae) {
-        esc = escape(ae);
-      }
-      rest = rest.split(ae).join(esc);
-    }
-  }
-
-
-  // chop off from the tail first.
-  var hash = rest.indexOf('#');
-  if (hash !== -1) {
-    // got a fragment string.
-    this.hash = rest.substr(hash);
-    rest = rest.slice(0, hash);
-  }
-  var qm = rest.indexOf('?');
-  if (qm !== -1) {
-    this.search = rest.substr(qm);
-    this.query = rest.substr(qm + 1);
-    if (parseQueryString) {
-      this.query = querystring.parse(this.query);
-    }
-    rest = rest.slice(0, qm);
-  } else if (parseQueryString) {
-    // no query string, but parseQueryString still requested
-    this.search = '';
-    this.query = {};
-  }
-  if (rest) this.pathname = rest;
-  if (slashedProtocol[lowerProto] &&
-      this.hostname && !this.pathname) {
-    this.pathname = '/';
-  }
-
-  //to support http.request
-  if (this.pathname || this.search) {
-    var p = this.pathname || '';
-    var s = this.search || '';
-    this.path = p + s;
-  }
-
-  // finally, reconstruct the href based on what has been validated.
-  this.href = this.format();
-  return this;
-};
-
-// format a parsed object into a url string
-function urlFormat(obj) {
-  // ensure it's an object, and not a string url.
-  // If it's an obj, this is a no-op.
-  // this way, you can call url_format() on strings
-  // to clean up potentially wonky urls.
-  if (util.isString(obj)) obj = urlParse(obj);
-  if (!(obj instanceof Url)) return Url.prototype.format.call(obj);
-  return obj.format();
-}
-
-Url.prototype.format = function() {
-  var auth = this.auth || '';
-  if (auth) {
-    auth = encodeURIComponent(auth);
-    auth = auth.replace(/%3A/i, ':');
-    auth += '@';
-  }
-
-  var protocol = this.protocol || '',
-      pathname = this.pathname || '',
-      hash = this.hash || '',
-      host = false,
-      query = '';
-
-  if (this.host) {
-    host = auth + this.host;
-  } else if (this.hostname) {
-    host = auth + (this.hostname.indexOf(':') === -1 ?
-        this.hostname :
-        '[' + this.hostname + ']');
-    if (this.port) {
-      host += ':' + this.port;
-    }
-  }
-
-  if (this.query &&
-      util.isObject(this.query) &&
-      Object.keys(this.query).length) {
-    query = querystring.stringify(this.query);
-  }
-
-  var search = this.search || (query && ('?' + query)) || '';
-
-  if (protocol && protocol.substr(-1) !== ':') protocol += ':';
-
-  // only the slashedProtocols get the //.  Not mailto:, xmpp:, etc.
-  // unless they had them to begin with.
-  if (this.slashes ||
-      (!protocol || slashedProtocol[protocol]) && host !== false) {
-    host = '//' + (host || '');
-    if (pathname && pathname.charAt(0) !== '/') pathname = '/' + pathname;
-  } else if (!host) {
-    host = '';
-  }
-
-  if (hash && hash.charAt(0) !== '#') hash = '#' + hash;
-  if (search && search.charAt(0) !== '?') search = '?' + search;
-
-  pathname = pathname.replace(/[?#]/g, function(match) {
-    return encodeURIComponent(match);
-  });
-  search = search.replace('#', '%23');
-
-  return protocol + host + pathname + search + hash;
-};
-
-function urlResolve(source, relative) {
-  return urlParse(source, false, true).resolve(relative);
-}
-
-Url.prototype.resolve = function(relative) {
-  return this.resolveObject(urlParse(relative, false, true)).format();
-};
-
-function urlResolveObject(source, relative) {
-  if (!source) return relative;
-  return urlParse(source, false, true).resolveObject(relative);
-}
-
-Url.prototype.resolveObject = function(relative) {
-  if (util.isString(relative)) {
-    var rel = new Url();
-    rel.parse(relative, false, true);
-    relative = rel;
-  }
-
-  var result = new Url();
-  var tkeys = Object.keys(this);
-  for (var tk = 0; tk < tkeys.length; tk++) {
-    var tkey = tkeys[tk];
-    result[tkey] = this[tkey];
-  }
-
-  // hash is always overridden, no matter what.
-  // even href="" will remove it.
-  result.hash = relative.hash;
-
-  // if the relative url is empty, then there's nothing left to do here.
-  if (relative.href === '') {
-    result.href = result.format();
-    return result;
-  }
-
-  // hrefs like //foo/bar always cut to the protocol.
-  if (relative.slashes && !relative.protocol) {
-    // take everything except the protocol from relative
-    var rkeys = Object.keys(relative);
-    for (var rk = 0; rk < rkeys.length; rk++) {
-      var rkey = rkeys[rk];
-      if (rkey !== 'protocol')
-        result[rkey] = relative[rkey];
-    }
-
-    //urlParse appends trailing / to urls like http://www.example.com
-    if (slashedProtocol[result.protocol] &&
-        result.hostname && !result.pathname) {
-      result.path = result.pathname = '/';
-    }
-
-    result.href = result.format();
-    return result;
-  }
-
-  if (relative.protocol && relative.protocol !== result.protocol) {
-    // if it's a known url protocol, then changing
-    // the protocol does weird things
-    // first, if it's not file:, then we MUST have a host,
-    // and if there was a path
-    // to begin with, then we MUST have a path.
-    // if it is file:, then the host is dropped,
-    // because that's known to be hostless.
-    // anything else is assumed to be absolute.
-    if (!slashedProtocol[relative.protocol]) {
-      var keys = Object.keys(relative);
-      for (var v = 0; v < keys.length; v++) {
-        var k = keys[v];
-        result[k] = relative[k];
-      }
-      result.href = result.format();
-      return result;
-    }
-
-    result.protocol = relative.protocol;
-    if (!relative.host && !hostlessProtocol[relative.protocol]) {
-      var relPath = (relative.pathname || '').split('/');
-      while (relPath.length && !(relative.host = relPath.shift()));
-      if (!relative.host) relative.host = '';
-      if (!relative.hostname) relative.hostname = '';
-      if (relPath[0] !== '') relPath.unshift('');
-      if (relPath.length < 2) relPath.unshift('');
-      result.pathname = relPath.join('/');
-    } else {
-      result.pathname = relative.pathname;
-    }
-    result.search = relative.search;
-    result.query = relative.query;
-    result.host = relative.host || '';
-    result.auth = relative.auth;
-    result.hostname = relative.hostname || relative.host;
-    result.port = relative.port;
-    // to support http.request
-    if (result.pathname || result.search) {
-      var p = result.pathname || '';
-      var s = result.search || '';
-      result.path = p + s;
-    }
-    result.slashes = result.slashes || relative.slashes;
-    result.href = result.format();
-    return result;
-  }
-
-  var isSourceAbs = (result.pathname && result.pathname.charAt(0) === '/'),
-      isRelAbs = (
-          relative.host ||
-          relative.pathname && relative.pathname.charAt(0) === '/'
-      ),
-      mustEndAbs = (isRelAbs || isSourceAbs ||
-                    (result.host && relative.pathname)),
-      removeAllDots = mustEndAbs,
-      srcPath = result.pathname && result.pathname.split('/') || [],
-      relPath = relative.pathname && relative.pathname.split('/') || [],
-      psychotic = result.protocol && !slashedProtocol[result.protocol];
-
-  // if the url is a non-slashed url, then relative
-  // links like ../.. should be able
-  // to crawl up to the hostname, as well.  This is strange.
-  // result.protocol has already been set by now.
-  // Later on, put the first path part into the host field.
-  if (psychotic) {
-    result.hostname = '';
-    result.port = null;
-    if (result.host) {
-      if (srcPath[0] === '') srcPath[0] = result.host;
-      else srcPath.unshift(result.host);
-    }
-    result.host = '';
-    if (relative.protocol) {
-      relative.hostname = null;
-      relative.port = null;
-      if (relative.host) {
-        if (relPath[0] === '') relPath[0] = relative.host;
-        else relPath.unshift(relative.host);
-      }
-      relative.host = null;
-    }
-    mustEndAbs = mustEndAbs && (relPath[0] === '' || srcPath[0] === '');
-  }
-
-  if (isRelAbs) {
-    // it's absolute.
-    result.host = (relative.host || relative.host === '') ?
-                  relative.host : result.host;
-    result.hostname = (relative.hostname || relative.hostname === '') ?
-                      relative.hostname : result.hostname;
-    result.search = relative.search;
-    result.query = relative.query;
-    srcPath = relPath;
-    // fall through to the dot-handling below.
-  } else if (relPath.length) {
-    // it's relative
-    // throw away the existing file, and take the new path instead.
-    if (!srcPath) srcPath = [];
-    srcPath.pop();
-    srcPath = srcPath.concat(relPath);
-    result.search = relative.search;
-    result.query = relative.query;
-  } else if (!util.isNullOrUndefined(relative.search)) {
-    // just pull out the search.
-    // like href='?foo'.
-    // Put this after the other two cases because it simplifies the booleans
-    if (psychotic) {
-      result.hostname = result.host = srcPath.shift();
-      //occationaly the auth can get stuck only in host
-      //this especially happens in cases like
-      //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
-      var authInHost = result.host && result.host.indexOf('@') > 0 ?
-                       result.host.split('@') : false;
-      if (authInHost) {
-        result.auth = authInHost.shift();
-        result.host = result.hostname = authInHost.shift();
-      }
-    }
-    result.search = relative.search;
-    result.query = relative.query;
-    //to support http.request
-    if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
-      result.path = (result.pathname ? result.pathname : '') +
-                    (result.search ? result.search : '');
-    }
-    result.href = result.format();
-    return result;
-  }
-
-  if (!srcPath.length) {
-    // no path at all.  easy.
-    // we've already handled the other stuff above.
-    result.pathname = null;
-    //to support http.request
-    if (result.search) {
-      result.path = '/' + result.search;
-    } else {
-      result.path = null;
-    }
-    result.href = result.format();
-    return result;
-  }
-
-  // if a url ENDs in . or .., then it must get a trailing slash.
-  // however, if it ends in anything else non-slashy,
-  // then it must NOT get a trailing slash.
-  var last = srcPath.slice(-1)[0];
-  var hasTrailingSlash = (
-      (result.host || relative.host || srcPath.length > 1) &&
-      (last === '.' || last === '..') || last === '');
-
-  // strip single dots, resolve double dots to parent dir
-  // if the path tries to go above the root, `up` ends up > 0
-  var up = 0;
-  for (var i = srcPath.length; i >= 0; i--) {
-    last = srcPath[i];
-    if (last === '.') {
-      srcPath.splice(i, 1);
-    } else if (last === '..') {
-      srcPath.splice(i, 1);
-      up++;
-    } else if (up) {
-      srcPath.splice(i, 1);
-      up--;
-    }
-  }
-
-  // if the path is allowed to go above the root, restore leading ..s
-  if (!mustEndAbs && !removeAllDots) {
-    for (; up--; up) {
-      srcPath.unshift('..');
-    }
-  }
-
-  if (mustEndAbs && srcPath[0] !== '' &&
-      (!srcPath[0] || srcPath[0].charAt(0) !== '/')) {
-    srcPath.unshift('');
-  }
-
-  if (hasTrailingSlash && (srcPath.join('/').substr(-1) !== '/')) {
-    srcPath.push('');
-  }
-
-  var isAbsolute = srcPath[0] === '' ||
-      (srcPath[0] && srcPath[0].charAt(0) === '/');
-
-  // put the host back
-  if (psychotic) {
-    result.hostname = result.host = isAbsolute ? '' :
-                                    srcPath.length ? srcPath.shift() : '';
-    //occationaly the auth can get stuck only in host
-    //this especially happens in cases like
-    //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
-    var authInHost = result.host && result.host.indexOf('@') > 0 ?
-                     result.host.split('@') : false;
-    if (authInHost) {
-      result.auth = authInHost.shift();
-      result.host = result.hostname = authInHost.shift();
-    }
-  }
-
-  mustEndAbs = mustEndAbs || (result.host && srcPath.length);
-
-  if (mustEndAbs && !isAbsolute) {
-    srcPath.unshift('');
-  }
-
-  if (!srcPath.length) {
-    result.pathname = null;
-    result.path = null;
-  } else {
-    result.pathname = srcPath.join('/');
-  }
-
-  //to support request.http
-  if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
-    result.path = (result.pathname ? result.pathname : '') +
-                  (result.search ? result.search : '');
-  }
-  result.auth = relative.auth || result.auth;
-  result.slashes = result.slashes || relative.slashes;
-  result.href = result.format();
-  return result;
-};
-
-Url.prototype.parseHost = function() {
-  var host = this.host;
-  var port = portPattern.exec(host);
-  if (port) {
-    port = port[0];
-    if (port !== ':') {
-      this.port = port.substr(1);
-    }
-    host = host.substr(0, host.length - port.length);
-  }
-  if (host) this.hostname = host;
-};
-
-},{"./util":20,"punycode":15,"querystring":18}],20:[function(require,module,exports){
-'use strict';
-
-module.exports = {
-  isString: function(arg) {
-    return typeof(arg) === 'string';
-  },
-  isObject: function(arg) {
-    return typeof(arg) === 'object' && arg !== null;
-  },
-  isNull: function(arg) {
-    return arg === null;
-  },
-  isNullOrUndefined: function(arg) {
-    return arg == null;
-  }
-};
-
-},{}],21:[function(require,module,exports){
-var _require = require //fool browserify
-module.exports = _require('sodium-prebuilt/build/Release/sodium')
-
-},{}],22:[function(require,module,exports){
-
-module.exports = require('sodium-browserify-tweetnacl')
-
-},{"sodium-browserify-tweetnacl":24}],23:[function(require,module,exports){
-(function (process,Buffer){
-
-if(process.env.CHLORIDE_JS)
-  return module.exports = require('./browser-small')
-
-function isElectron () {
-  try {
-    require('electron')
-    return true
-  } catch (_) { return false }
-}
-
-try {
-  var cl = module.exports = require('./bindings')
-
-  if(isElectron()) {
-    //there is a weird problem with electro.
-    //where detached signatures do not work, but other
-    //signatures do...
-
-    var keys = cl.crypto_sign_keypair()
-    var msg = cl.crypto_hash(new Buffer('test signature'))
-    var sig = cl.crypto_sign_detached(msg, keys.secretKey)
-
-    if(cl.crypto_sign_verify_detached(sig, msg, keys.publicKey))
-      return
-
-    console.error('detached signatures broken in electron, using workaround')
-
-    var verify = module.exports.crypto_sign_verify_detached
-    module.exports.crypto_sign_verify_detached = function (sig, msg, pk) {
-      //return verify(copy(sig), copy(msg), copy(pk))
-      return module.exports.crypto_sign_open(Buffer.concat([sig, msg]), pk)
-      //console.log(sig, msg, pk)
-//      return verify(new Buffer(sig), new Buffer(msg), new Buffer(pk))
-    }
-  }
-} catch (err) {
-  console.error('error loading sodium bindings:', err.message)
-  console.error('falling back to javascript version.')
-  module.exports = require('./browser-small')
 }
 
 
-}).call(this,require('_process'),require("buffer").Buffer)
-},{"./bindings":21,"./browser-small":22,"_process":14,"buffer":8,"electron":7}],24:[function(require,module,exports){
+
+
+},{"./state":80,"pull-handshake":28,"pull-stream":33}],78:[function(require,module,exports){
 (function (Buffer){
+var handshake = require('./handshake')
+var secure = require('./secure')
+var cl = require('chloride')
 
-var tweetnacl = require('tweetnacl/nacl-fast')
-var Sha256 = require('sha.js/sha256')
-var ed2curve = require('ed2curve')
-var auth = require('tweetnacl-auth')
-
-exports.crypto_hash_sha256 = function (msg) {
-  return new Sha256().update(msg).digest()
+function isBuffer(buf, len) {
+  return Buffer.isBuffer(buf) && buf.length === len
 }
 
-function fix_keys(keys) {
-  return {
-    publicKey: new Buffer(keys.publicKey),
-    secretKey: new Buffer(keys.secretKey),
+exports.client =
+exports.createClient = function (alice, app_key, timeout) {
+  var create = handshake.client(alice, app_key, timeout)
+
+  return function (bob, seed, cb) {
+    if(!isBuffer(bob, 32))
+      throw new Error('createClient *must* be passed a public key')
+    if('function' === typeof seed)
+      return create(bob, secure(seed))
+    else
+      return create(bob, seed, secure(cb))
   }
-}
 
-exports.crypto_sign_seed_keypair = function (seed) {
-  return fix_keys(tweetnacl.sign.keyPair.fromSeed(seed))
 }
+exports.server =
+exports.createServer = function (bob, authorize, app_key, timeout) {
+  var create = handshake.server(bob, authorize, app_key, timeout)
 
-exports.crypto_sign_keypair = function () {
-  return fix_keys(tweetnacl.sign.keyPair())
-}
-
-exports.crypto_sign_detached = function (msg, skey) {
-  return new Buffer(tweetnacl.sign.detached(msg, skey))
-}
-
-exports.crypto_sign = function (msg, sk) {
-  return new Buffer(tweetnacl.sign(msg, sk))
-}
-exports.crypto_sign_open = function (ctxt, pk) {
-  return new Buffer(tweetnacl.sign.open(ctxt, pk))
-}
-
-exports.crypto_sign_verify_detached = function (sig, msg, pkey) {
-  return tweetnacl.sign.detached.verify(msg, sig, pkey)
-}
-
-exports.crypto_box_keypair = function () {
-  return fix_keys(tweetnacl.box.keyPair())
-}
-
-
-exports.crypto_hash = function (msg) {
-  return new Buffer(tweetnacl.hash(msg))
-}
-
-exports.crypto_secretbox_easy = function (msg, key, nonce) {
-  return new Buffer(tweetnacl.secretbox(msg, key, nonce))
-}
-
-exports.crypto_secretbox_open_easy = function (ctxt, nonce, key) {
-  var r = tweetnacl.secretbox.open(ctxt, nonce, key)
-  return r ? new Buffer(r) : null
-}
-
-exports.crypto_sign_ed25519_pk_to_curve25519 = function (pk) {
-  return new Buffer(ed2curve.convertPublicKey(pk))
-}
-exports.crypto_sign_ed25519_sk_to_curve25519 = function (sk) {
-  return new Buffer(ed2curve.convertSecretKey(sk))
-}
-
-exports.crypto_box_easy = function (msg, nonce, pkey, skey) {
-  return new Buffer(tweetnacl.box(msg, nonce, pkey, skey))
-}
-
-exports.crypto_box_open_easy = function (ctxt, nonce, pkey, skey) {
-  var r = tweetnacl.box.open(ctxt, nonce, pkey, skey)
-  return r ? new Buffer(r) : null
-}
-
-exports.crypto_scalarmult = function (pk, sk) {
-  return new Buffer(tweetnacl.scalarMult(pk, sk))
-}
-
-//exports.crypto_auth = tweetnacl.auth
-//exports.crypto_auth_verify = tweetnacl.auth.verify
-
-exports.crypto_auth = function (msg, key) {
-  return new Buffer(auth(msg, key))
-}
-
-exports.crypto_auth_verify = function (mac, msg, key) {
-  var _mac = exports.crypto_auth(msg, key)
-  var d = true
-  //constant time comparson
-  for(var i = 0; i < auth.length; i++) {
-    d = d && (_mac[i] === mac[i])
+  return function (cb) {
+    return create(secure(cb))
   }
-  return +!d
+
 }
 
-exports.randombytes = function (buf) {
-  var b = new Buffer(tweetnacl.randomBytes(buf.length))
-  b.copy(buf)
-  return null
+
+
+
+}).call(this,{"isBuffer":require("../is-buffer/index.js")})
+},{"../is-buffer/index.js":19,"./handshake":77,"./secure":79,"chloride":14}],79:[function(require,module,exports){
+(function (Buffer){
+var sodium = require('chloride')
+var hash = sodium.crypto_hash_sha256
+var pull = require('pull-stream')
+var boxes = require('pull-box-stream')
+
+var concat = Buffer.concat
+
+module.exports = function (cb) {
+
+  return function (err, stream, state) {
+    if(err) return cb(err)
+
+    var en_key = hash(concat([state.secret, state.remote.public]))
+    var de_key = hash(concat([state.secret, state.local.public]))
+
+    var en_nonce = state.remote.app_mac.slice(0, 24)
+    var de_nonce = state.local.app_mac.slice(0, 24)
+
+    cb(null, {
+      remote: state.remote.public,
+      //on the server, attach any metadata gathered
+      //during `authorize` call
+      auth: state.auth,
+      source: pull(
+        stream.source,
+        boxes.createUnboxStream(de_key, de_nonce)
+      ),
+      sink: pull(
+        boxes.createBoxStream(en_key, en_nonce),
+        stream.sink
+      )
+    })
+  }
+
 }
 
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":8,"ed2curve":25,"sha.js/sha256":28,"tweetnacl-auth":29,"tweetnacl/nacl-fast":30}],25:[function(require,module,exports){
-/*
- * ed2curve: convert Ed25519 signing key pair into Curve25519
- * key pair suitable for Diffie-Hellman key exchange.
- *
- * Written by Dmitry Chestnykh in 2014. Public domain.
- */
-/* jshint newcap: false */
-(function(root, f) {
-  'use strict';
-  if (typeof module !== 'undefined' && module.exports) module.exports = f(require('tweetnacl/nacl-fast'));
-  else root.ed2curve = f(root.nacl);
-}(this, function(nacl) {
-  'use strict';
-  if (!nacl) throw new Error('tweetnacl not loaded');
+},{"buffer":11,"chloride":14,"pull-box-stream":26,"pull-stream":33}],80:[function(require,module,exports){
+(function (Buffer){
 
-  // -- Operations copied from TweetNaCl.js. --
+var sodium      = require('chloride')
 
-  var gf = function(init) {
-    var i, r = new Float64Array(16);
-    if (init) for (i = 0; i < init.length; i++) r[i] = init[i];
-    return r;
-  };
+var keypair     = sodium.crypto_box_keypair
+var from_seed   = sodium.crypto_sign_seed_keypair
+var shared      = sodium.crypto_scalarmult
+var hash        = sodium.crypto_hash_sha256
+var sign        = sodium.crypto_sign_detached
+var verify      = sodium.crypto_sign_verify_detached
+var auth        = sodium.crypto_auth
+var verify_auth = sodium.crypto_auth_verify
+var curvify_pk  = sodium.crypto_sign_ed25519_pk_to_curve25519
+var curvify_sk  = sodium.crypto_sign_ed25519_sk_to_curve25519
+var box         = sodium.crypto_secretbox_easy
+var unbox       = sodium.crypto_secretbox_open_easy
 
-  var gf1 = gf([1]);
+var concat = Buffer.concat
 
-  function car25519(o) {
-    var c;
-    var i;
-    for (i = 0; i < 16; i++) {
-      o[i] += 65536;
-      c = Math.floor(o[i] / 65536);
-      o[(i+1)*(i<15?1:0)] += c - 1 + 37 * (c-1) * (i===15?1:0);
-      o[i] -= (c * 65536);
-    }
+var nonce = new Buffer(24); nonce.fill(0)
+
+var challenge_length = 64
+var client_auth_length = 16+32+64
+var server_auth_length = 16+64
+var mac_length = 16
+
+//this is a simple secure handshake,
+//the client public key is passed in plain text,
+
+module.exports = State
+
+function State (app_key, local, remote, seed) {
+
+  if(!(this instanceof State)) return new State(app_key, local, remote, seed)
+
+  if(seed) local = from_seed(seed)
+
+  this.app_key = app_key
+  var kx = keypair()
+  this.local = {
+    kx_pk: kx.publicKey,
+    kx_sk: kx.secretKey,
+    public: local.publicKey,
+    secret: local.secretKey
+  }
+  this.remote = {
+    public: remote || null
   }
 
-  function sel25519(p, q, b) {
-    var t, c = ~(b-1);
-    for (var i = 0; i < 16; i++) {
-      t = c & (p[i] ^ q[i]);
-      p[i] ^= t;
-      q[i] ^= t;
-    }
-  }
+}
 
-  function unpack25519(o, n) {
-    var i;
-    for (i = 0; i < 16; i++) o[i] = n[2*i] + (n[2*i+1] << 8);
-    o[15] &= 0x7fff;
-  }
+var proto = State.prototype
 
-  // addition
-  function A(o, a, b) {
-    var i;
-    for (i = 0; i < 16; i++) o[i] = (a[i] + b[i])|0;
-  }
+proto.createChallenge =
+function createChallenge () {
+  var state = this
 
-  // subtraction
-  function Z(o, a, b) {
-    var i;
-    for (i = 0; i < 16; i++) o[i] = (a[i] - b[i])|0;
-  }
+  state.local.app_mac = auth(state.local.kx_pk, state.app_key)
+  return concat([state.local.app_mac, state.local.kx_pk])
+}
 
-  // multiplication
-  function M(o, a, b) {
-    var i, j, t = new Float64Array(31);
-    for (i = 0; i < 31; i++) t[i] = 0;
-    for (i = 0; i < 16; i++) {
-      for (j = 0; j < 16; j++) {
-        t[i+j] += a[i] * b[j];
-      }
-    }
-    for (i = 0; i < 15; i++) {
-      t[i] += 38 * t[i+16];
-    }
-    for (i = 0; i < 16; i++) o[i] = t[i];
-    car25519(o);
-    car25519(o);
-  }
+proto.verifyChallenge =
+function verifyChallenge (challenge) {
+  var state = this
 
-  // squaring
-  function S(o, a) {
-    M(o, a, a);
-  }
+  var mac = challenge.slice(0, 32)
+  var remote_pk = challenge.slice(32, challenge.length)
+  if(0 !== verify_auth(mac, remote_pk, state.app_key))
+    return null
 
-  // inversion
-  function inv25519(o, i) {
-    var c = gf();
-    var a;
-    for (a = 0; a < 16; a++) c[a] = i[a];
-    for (a = 253; a >= 0; a--) {
-      S(c, c);
-      if(a !== 2 && a !== 4) M(c, c, i);
-    }
-    for (a = 0; a < 16; a++) o[a] = c[a];
-  }
+  state.remote.kx_pk = remote_pk
+  state.remote.app_mac = mac
+  state.secret = shared(state.local.kx_sk, state.remote.kx_pk)
+  state.shash = hash(state.secret)
 
-  function pack25519(o, n) {
-    var i, j, b;
-    var m = gf(), t = gf();
-    for (i = 0; i < 16; i++) t[i] = n[i];
-    car25519(t);
-    car25519(t);
-    car25519(t);
-    for (j = 0; j < 2; j++) {
-      m[0] = t[0] - 0xffed;
-      for (i = 1; i < 15; i++) {
-        m[i] = t[i] - 0xffff - ((m[i-1]>>16) & 1);
-        m[i-1] &= 0xffff;
-      }
-      m[15] = t[15] - 0x7fff - ((m[14]>>16) & 1);
-      b = (m[15]>>16) & 1;
-      m[14] &= 0xffff;
-      sel25519(t, m, 1-b);
-    }
-    for (i = 0; i < 16; i++) {
-      o[2*i] = t[i] & 0xff;
-      o[2*i+1] = t[i]>>8;
-    }
-  }
+  return true
+}
 
-  // ----
 
-  // Converts Ed25519 public key to Curve25519 public key.
-  // montgomeryX = (edwardsY + 1)*inverse(1 - edwardsY) mod p
-  function convertPublicKey(pk) {
-    var z = new Uint8Array(32),
-        y = gf(), a = gf(), b = gf();
+proto.createClientAuth =
+function createClientAuth () {
+  var state = this
+  //now we have agreed on the secret.
+  //this can be an encryption secret,
+  //or a hmac secret.
 
-    unpack25519(y, pk);
+  // shared(local.kx, remote.public)
+  var a_bob = shared(state.local.kx_sk, curvify_pk(state.remote.public))
+  state.a_bob = a_bob
+  state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
 
-    A(a, gf1, y);
-    Z(b, gf1, y);
-    inv25519(b, b);
-    M(a, a, b);
+  var signed = concat([state.app_key, state.remote.public, state.shash])
+  var sig = sign(signed, state.local.secret)
 
-    pack25519(z, a);
-    return z;
-  }
+  state.local.hello = Buffer.concat([sig, state.local.public])
+  return box(state.local.hello, nonce, state.secret2)
+}
 
-  // Converts Ed25519 secret key to Curve25519 secret key.
-  function convertSecretKey(sk) {
-    var d = new Uint8Array(64), o = new Uint8Array(32), i;
-    nacl.lowlevel.crypto_hash(d, sk, 32);
-    d[0] &= 248;
-    d[31] &= 127;
-    d[31] |= 64;
-    for (i = 0; i < 32; i++) o[i] = d[i];
-    for (i = 0; i < 64; i++) d[i] = 0;
-    return o;
-  }
+proto.verifyClientAuth =
+function verifyClientAuth (data) {
+  var state = this
 
-  function convertKeyPair(edKeyPair) {
-    return {
-      publicKey: convertPublicKey(edKeyPair.publicKey),
-      secretKey: convertSecretKey(edKeyPair.secretKey)
-    };
-  }
+  var a_bob = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
+  state.a_bob = a_bob
+  state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
 
-  return {
-    convertPublicKey: convertPublicKey,
-    convertSecretKey: convertSecretKey,
-    convertKeyPair: convertKeyPair,
-  };
+  state.remote.hello = unbox(data, nonce, state.secret2)
+  if(!state.remote.hello)
+    return null
 
-}));
+  var sig = state.remote.hello.slice(0, 64)
+  var public = state.remote.hello.slice(64, client_auth_length)
 
-},{"tweetnacl/nacl-fast":30}],26:[function(require,module,exports){
+  var signed = concat([state.app_key, state.local.public, state.shash])
+  if(!verify(sig, signed, public))
+    return null
+
+  state.remote.public = public
+
+  return true
+}
+
+proto.createServerAccept =
+function createServerAccept () {
+  var state = this
+
+  //shared key between my local ephemeral key + remote public
+  var b_alice = shared(state.local.kx_sk, curvify_pk(state.remote.public))
+  state.b_alice = b_alice
+  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
+
+  var signed = concat([state.app_key, state.remote.hello, state.shash])
+  var okay = sign(signed, state.local.secret)
+  return box(okay, nonce, state.secret3)
+}
+
+proto.verifyServerAccept =
+function verifyServerAccept (boxed_okay) {
+  var state = this
+
+  var b_alice = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
+  state.b_alice = b_alice
+//  state.secret3 = hash(concat([state.secret2, b_alice]))
+  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
+
+  var sig = unbox(boxed_okay, nonce, state.secret3)
+  if(!sig) return null
+  var signed = concat([state.app_key, state.local.hello, state.shash])
+  if(!verify(sig, signed, state.remote.public))
+      return null
+  return true
+}
+
+proto.cleanSecrets =
+function cleanSecrets () {
+  var state = this
+
+  // clean away all the secrets for forward security.
+  // use a different secret hash(secret3) in the rest of the session,
+  // and so that a sloppy application cannot compromise the handshake.
+
+  delete state.local.secret
+  state.shash.fill(0)
+  state.secret.fill(0)
+  state.a_bob.fill(0)
+  state.b_alice.fill(0)
+  state.secret = hash(state.secret3)
+  state.secret2.fill(0)
+  state.secret3.fill(0)
+  state.local.kx_sk.fill(0)
+
+  delete state.shash
+  delete state.secret2
+  delete state.secret3
+  delete state.a_bob
+  delete state.b_alice
+  delete state.local.kx_sk
+
+  return state
+}
+
+
+
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11,"chloride":14}],81:[function(require,module,exports){
 (function (Buffer){
 // prototype class for hash functions
 function Hash (blockSize, finalSize) {
@@ -4396,32 +6945,7 @@ Hash.prototype._update = function () {
 module.exports = Hash
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":8}],27:[function(require,module,exports){
-if (typeof Object.create === 'function') {
-  // implementation from standard node.js 'util' module
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    ctor.prototype = Object.create(superCtor.prototype, {
-      constructor: {
-        value: ctor,
-        enumerable: false,
-        writable: true,
-        configurable: true
-      }
-    });
-  };
-} else {
-  // old school shim for old browsers
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    var TempCtor = function () {}
-    TempCtor.prototype = superCtor.prototype
-    ctor.prototype = new TempCtor()
-    ctor.prototype.constructor = ctor
-  }
-}
-
-},{}],28:[function(require,module,exports){
+},{"buffer":11}],82:[function(require,module,exports){
 (function (Buffer){
 /**
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
@@ -4559,7 +7083,132 @@ Sha256.prototype._hash = function () {
 module.exports = Sha256
 
 }).call(this,require("buffer").Buffer)
-},{"./hash":26,"buffer":8,"inherits":27}],29:[function(require,module,exports){
+},{"./hash":81,"buffer":11,"inherits":18}],83:[function(require,module,exports){
+(function (Buffer){
+
+var tweetnacl = require('tweetnacl/nacl-fast')
+var Sha256 = require('sha.js/sha256')
+var ed2curve = require('ed2curve')
+var auth = require('tweetnacl-auth')
+
+exports.crypto_hash_sha256 = function (msg) {
+  return new Sha256().update(msg).digest()
+}
+
+function fix_keys(keys) {
+  return {
+    publicKey: new Buffer(keys.publicKey),
+    secretKey: new Buffer(keys.secretKey),
+  }
+}
+
+exports.crypto_sign_seed_keypair = function (seed) {
+  return fix_keys(tweetnacl.sign.keyPair.fromSeed(seed))
+}
+
+exports.crypto_sign_keypair = function () {
+  return fix_keys(tweetnacl.sign.keyPair())
+}
+
+exports.crypto_sign_detached = function (msg, skey) {
+  return new Buffer(tweetnacl.sign.detached(msg, skey))
+}
+
+exports.crypto_sign = function (msg, sk) {
+  return new Buffer(tweetnacl.sign(msg, sk))
+}
+exports.crypto_sign_open = function (ctxt, pk) {
+  return new Buffer(tweetnacl.sign.open(ctxt, pk))
+}
+
+exports.crypto_sign_verify_detached = function (sig, msg, pkey) {
+  return tweetnacl.sign.detached.verify(msg, sig, pkey)
+}
+
+exports.crypto_box_keypair = function () {
+  return fix_keys(tweetnacl.box.keyPair())
+}
+
+
+exports.crypto_hash = function (msg) {
+  return new Buffer(tweetnacl.hash(msg))
+}
+
+exports.crypto_secretbox_easy = function (msg, key, nonce) {
+  return new Buffer(tweetnacl.secretbox(msg, key, nonce))
+}
+
+exports.crypto_secretbox_open_easy = function (ctxt, nonce, key) {
+  var r = tweetnacl.secretbox.open(ctxt, nonce, key)
+  return r ? new Buffer(r) : null
+}
+
+exports.crypto_sign_ed25519_pk_to_curve25519 = function (pk) {
+  return new Buffer(ed2curve.convertPublicKey(pk))
+}
+exports.crypto_sign_ed25519_sk_to_curve25519 = function (sk) {
+  return new Buffer(ed2curve.convertSecretKey(sk))
+}
+
+exports.crypto_box_easy = function (msg, nonce, pkey, skey) {
+  return new Buffer(tweetnacl.box(msg, nonce, pkey, skey))
+}
+
+exports.crypto_box_open_easy = function (ctxt, nonce, pkey, skey) {
+  var r = tweetnacl.box.open(ctxt, nonce, pkey, skey)
+  return r ? new Buffer(r) : null
+}
+
+exports.crypto_scalarmult = function (pk, sk) {
+  return new Buffer(tweetnacl.scalarMult(pk, sk))
+}
+
+//exports.crypto_auth = tweetnacl.auth
+//exports.crypto_auth_verify = tweetnacl.auth.verify
+
+exports.crypto_auth = function (msg, key) {
+  return new Buffer(auth(msg, key))
+}
+
+exports.crypto_auth_verify = function (mac, msg, key) {
+  var _mac = exports.crypto_auth(msg, key)
+  var d = true
+  //constant time comparson
+  for(var i = 0; i < auth.length; i++) {
+    d = d && (_mac[i] === mac[i])
+  }
+  return +!d
+}
+
+exports.randombytes = function (buf) {
+  var b = new Buffer(tweetnacl.randomBytes(buf.length))
+  b.copy(buf)
+  return null
+}
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11,"ed2curve":15,"sha.js/sha256":82,"tweetnacl-auth":85,"tweetnacl/nacl-fast":86}],84:[function(require,module,exports){
+
+module.exports = function split (data, max) {
+
+  if(max <= 0) throw new Error('cannot split into zero (or smaller) length buffers')
+
+  if(data.length <= max)
+    return [data]
+  var out = [], len = 0
+
+  while(len < data.length) {
+    out.push(data.slice(len, Math.min(len + max, data.length)))
+    len += max
+  }
+
+  return out
+}
+
+
+},{}],85:[function(require,module,exports){
 (function(root, f) {
   'use strict';
   if (typeof module !== 'undefined' && module.exports) module.exports = f(require('tweetnacl'));
@@ -4608,7 +7257,7 @@ module.exports = Sha256
 
 }));
 
-},{"tweetnacl":30}],30:[function(require,module,exports){
+},{"tweetnacl":86}],86:[function(require,module,exports){
 (function(nacl) {
 'use strict';
 
@@ -6998,3865 +9647,757 @@ nacl.setPRNG = function(fn) {
 
 })(typeof module !== 'undefined' && module.exports ? module.exports : (self.nacl = self.nacl || {}));
 
-},{"crypto":7}],31:[function(require,module,exports){
+},{"crypto":8}],87:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-
-module.exports = function (buf) {
-  var len = buf.length, i
-
-  for(i = len - 1; buf[i] === 255; i--) buf[i] = 0
-  if(~i) buf[i] = buf[i] + 1
-
-  return buf
-}
-
-},{}],32:[function(require,module,exports){
-/**
- * lodash 4.0.1 (Custom Build) <https://lodash.com/>
- * Build: `lodash modularize exports="npm" -o ./`
- * Copyright 2012-2016 The Dojo Foundation <http://dojofoundation.org/>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright 2009-2016 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- * Available under MIT license <https://lodash.com/license>
- */
-var assignInWith = require('lodash.assigninwith'),
-    rest = require('lodash.rest');
-
-/**
- * A faster alternative to `Function#apply`, this function invokes `func`
- * with the `this` binding of `thisArg` and the arguments of `args`.
- *
- * @private
- * @param {Function} func The function to invoke.
- * @param {*} thisArg The `this` binding of `func`.
- * @param {...*} args The arguments to invoke `func` with.
- * @returns {*} Returns the result of `func`.
- */
-function apply(func, thisArg, args) {
-  var length = args.length;
-  switch (length) {
-    case 0: return func.call(thisArg);
-    case 1: return func.call(thisArg, args[0]);
-    case 2: return func.call(thisArg, args[0], args[1]);
-    case 3: return func.call(thisArg, args[0], args[1], args[2]);
-  }
-  return func.apply(thisArg, args);
-}
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Used by `_.defaults` to customize its `_.assignIn` use.
- *
- * @private
- * @param {*} objValue The destination value.
- * @param {*} srcValue The source value.
- * @param {string} key The key of the property to assign.
- * @param {Object} object The parent object of `objValue`.
- * @returns {*} Returns the value to assign.
- */
-function assignInDefaults(objValue, srcValue, key, object) {
-  if (objValue === undefined ||
-      (eq(objValue, objectProto[key]) && !hasOwnProperty.call(object, key))) {
-    return srcValue;
-  }
-  return objValue;
-}
-
-/**
- * Performs a [`SameValueZero`](http://ecma-international.org/ecma-262/6.0/#sec-samevaluezero)
- * comparison between two values to determine if they are equivalent.
- *
- * @static
- * @memberOf _
- * @category Lang
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @returns {boolean} Returns `true` if the values are equivalent, else `false`.
- * @example
- *
- * var object = { 'user': 'fred' };
- * var other = { 'user': 'fred' };
- *
- * _.eq(object, object);
- * // => true
- *
- * _.eq(object, other);
- * // => false
- *
- * _.eq('a', 'a');
- * // => true
- *
- * _.eq('a', Object('a'));
- * // => false
- *
- * _.eq(NaN, NaN);
- * // => true
- */
-function eq(value, other) {
-  return value === other || (value !== value && other !== other);
-}
-
-/**
- * Assigns own and inherited enumerable properties of source objects to the
- * destination object for all destination properties that resolve to `undefined`.
- * Source objects are applied from left to right. Once a property is set,
- * additional values of the same property are ignored.
- *
- * **Note:** This method mutates `object`.
- *
- * @static
- * @memberOf _
- * @category Object
- * @param {Object} object The destination object.
- * @param {...Object} [sources] The source objects.
- * @returns {Object} Returns `object`.
- * @example
- *
- * _.defaults({ 'user': 'barney' }, { 'age': 36 }, { 'user': 'fred' });
- * // => { 'user': 'barney', 'age': 36 }
- */
-var defaults = rest(function(args) {
-  args.push(undefined, assignInDefaults);
-  return apply(assignInWith, undefined, args);
-});
-
-module.exports = defaults;
-
-},{"lodash.assigninwith":33,"lodash.rest":37}],33:[function(require,module,exports){
-/**
- * lodash (Custom Build) <https://lodash.com/>
- * Build: `lodash modularize exports="npm" -o ./`
- * Copyright jQuery Foundation and other contributors <https://jquery.org/>
- * Released under MIT license <https://lodash.com/license>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- */
-var keysIn = require('lodash.keysin'),
-    rest = require('lodash.rest');
-
-/** Used as references for various `Number` constants. */
-var MAX_SAFE_INTEGER = 9007199254740991;
-
-/** `Object#toString` result references. */
-var funcTag = '[object Function]',
-    genTag = '[object GeneratorFunction]';
-
-/** Used to detect unsigned integer values. */
-var reIsUint = /^(?:0|[1-9]\d*)$/;
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/6.0/#sec-object.prototype.tostring)
- * of values.
- */
-var objectToString = objectProto.toString;
-
-/**
- * Assigns `value` to `key` of `object` if the existing value is not equivalent
- * using [`SameValueZero`](http://ecma-international.org/ecma-262/6.0/#sec-samevaluezero)
- * for equality comparisons.
- *
- * @private
- * @param {Object} object The object to modify.
- * @param {string} key The key of the property to assign.
- * @param {*} value The value to assign.
- */
-function assignValue(object, key, value) {
-  var objValue = object[key];
-  if (!(hasOwnProperty.call(object, key) && eq(objValue, value)) ||
-      (value === undefined && !(key in object))) {
-    object[key] = value;
-  }
-}
-
-/**
- * The base implementation of `_.property` without support for deep paths.
- *
- * @private
- * @param {string} key The key of the property to get.
- * @returns {Function} Returns the new accessor function.
- */
-function baseProperty(key) {
-  return function(object) {
-    return object == null ? undefined : object[key];
-  };
-}
-
-/**
- * Copies properties of `source` to `object`.
- *
- * @private
- * @param {Object} source The object to copy properties from.
- * @param {Array} props The property identifiers to copy.
- * @param {Object} [object={}] The object to copy properties to.
- * @param {Function} [customizer] The function to customize copied values.
- * @returns {Object} Returns `object`.
- */
-function copyObject(source, props, object, customizer) {
-  object || (object = {});
-
-  var index = -1,
-      length = props.length;
-
-  while (++index < length) {
-    var key = props[index];
-
-    var newValue = customizer
-      ? customizer(object[key], source[key], key, object, source)
-      : source[key];
-
-    assignValue(object, key, newValue);
-  }
-  return object;
-}
-
-/**
- * Creates a function like `_.assign`.
- *
- * @private
- * @param {Function} assigner The function to assign values.
- * @returns {Function} Returns the new assigner function.
- */
-function createAssigner(assigner) {
-  return rest(function(object, sources) {
-    var index = -1,
-        length = sources.length,
-        customizer = length > 1 ? sources[length - 1] : undefined,
-        guard = length > 2 ? sources[2] : undefined;
-
-    customizer = (assigner.length > 3 && typeof customizer == 'function')
-      ? (length--, customizer)
-      : undefined;
-
-    if (guard && isIterateeCall(sources[0], sources[1], guard)) {
-      customizer = length < 3 ? undefined : customizer;
-      length = 1;
-    }
-    object = Object(object);
-    while (++index < length) {
-      var source = sources[index];
-      if (source) {
-        assigner(object, source, index, customizer);
-      }
-    }
-    return object;
-  });
-}
-
-/**
- * Gets the "length" property value of `object`.
- *
- * **Note:** This function is used to avoid a
- * [JIT bug](https://bugs.webkit.org/show_bug.cgi?id=142792) that affects
- * Safari on at least iOS 8.1-8.3 ARM64.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {*} Returns the "length" value.
- */
-var getLength = baseProperty('length');
-
-/**
- * Checks if `value` is a valid array-like index.
- *
- * @private
- * @param {*} value The value to check.
- * @param {number} [length=MAX_SAFE_INTEGER] The upper bounds of a valid index.
- * @returns {boolean} Returns `true` if `value` is a valid index, else `false`.
- */
-function isIndex(value, length) {
-  length = length == null ? MAX_SAFE_INTEGER : length;
-  return !!length &&
-    (typeof value == 'number' || reIsUint.test(value)) &&
-    (value > -1 && value % 1 == 0 && value < length);
-}
-
-/**
- * Checks if the given arguments are from an iteratee call.
- *
- * @private
- * @param {*} value The potential iteratee value argument.
- * @param {*} index The potential iteratee index or key argument.
- * @param {*} object The potential iteratee object argument.
- * @returns {boolean} Returns `true` if the arguments are from an iteratee call,
- *  else `false`.
- */
-function isIterateeCall(value, index, object) {
-  if (!isObject(object)) {
-    return false;
-  }
-  var type = typeof index;
-  if (type == 'number'
-        ? (isArrayLike(object) && isIndex(index, object.length))
-        : (type == 'string' && index in object)
-      ) {
-    return eq(object[index], value);
-  }
-  return false;
-}
-
-/**
- * Performs a
- * [`SameValueZero`](http://ecma-international.org/ecma-262/6.0/#sec-samevaluezero)
- * comparison between two values to determine if they are equivalent.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @returns {boolean} Returns `true` if the values are equivalent, else `false`.
- * @example
- *
- * var object = { 'user': 'fred' };
- * var other = { 'user': 'fred' };
- *
- * _.eq(object, object);
- * // => true
- *
- * _.eq(object, other);
- * // => false
- *
- * _.eq('a', 'a');
- * // => true
- *
- * _.eq('a', Object('a'));
- * // => false
- *
- * _.eq(NaN, NaN);
- * // => true
- */
-function eq(value, other) {
-  return value === other || (value !== value && other !== other);
-}
-
-/**
- * Checks if `value` is array-like. A value is considered array-like if it's
- * not a function and has a `value.length` that's an integer greater than or
- * equal to `0` and less than or equal to `Number.MAX_SAFE_INTEGER`.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is array-like, else `false`.
- * @example
- *
- * _.isArrayLike([1, 2, 3]);
- * // => true
- *
- * _.isArrayLike(document.body.children);
- * // => true
- *
- * _.isArrayLike('abc');
- * // => true
- *
- * _.isArrayLike(_.noop);
- * // => false
- */
-function isArrayLike(value) {
-  return value != null && isLength(getLength(value)) && !isFunction(value);
-}
-
-/**
- * Checks if `value` is classified as a `Function` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isFunction(_);
- * // => true
- *
- * _.isFunction(/abc/);
- * // => false
- */
-function isFunction(value) {
-  // The use of `Object#toString` avoids issues with the `typeof` operator
-  // in Safari 8 which returns 'object' for typed array and weak map constructors,
-  // and PhantomJS 1.9 which returns 'function' for `NodeList` instances.
-  var tag = isObject(value) ? objectToString.call(value) : '';
-  return tag == funcTag || tag == genTag;
-}
-
-/**
- * Checks if `value` is a valid array-like length.
- *
- * **Note:** This function is loosely based on
- * [`ToLength`](http://ecma-international.org/ecma-262/6.0/#sec-tolength).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a valid length,
- *  else `false`.
- * @example
- *
- * _.isLength(3);
- * // => true
- *
- * _.isLength(Number.MIN_VALUE);
- * // => false
- *
- * _.isLength(Infinity);
- * // => false
- *
- * _.isLength('3');
- * // => false
- */
-function isLength(value) {
-  return typeof value == 'number' &&
-    value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
-}
-
-/**
- * Checks if `value` is the
- * [language type](http://www.ecma-international.org/ecma-262/6.0/#sec-ecmascript-language-types)
- * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an object, else `false`.
- * @example
- *
- * _.isObject({});
- * // => true
- *
- * _.isObject([1, 2, 3]);
- * // => true
- *
- * _.isObject(_.noop);
- * // => true
- *
- * _.isObject(null);
- * // => false
- */
-function isObject(value) {
-  var type = typeof value;
-  return !!value && (type == 'object' || type == 'function');
-}
-
-/**
- * This method is like `_.assignIn` except that it accepts `customizer`
- * which is invoked to produce the assigned values. If `customizer` returns
- * `undefined`, assignment is handled by the method instead. The `customizer`
- * is invoked with five arguments: (objValue, srcValue, key, object, source).
- *
- * **Note:** This method mutates `object`.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @alias extendWith
- * @category Object
- * @param {Object} object The destination object.
- * @param {...Object} sources The source objects.
- * @param {Function} [customizer] The function to customize assigned values.
- * @returns {Object} Returns `object`.
- * @see _.assignWith
- * @example
- *
- * function customizer(objValue, srcValue) {
- *   return _.isUndefined(objValue) ? srcValue : objValue;
- * }
- *
- * var defaults = _.partialRight(_.assignInWith, customizer);
- *
- * defaults({ 'a': 1 }, { 'b': 2 }, { 'a': 3 });
- * // => { 'a': 1, 'b': 2 }
- */
-var assignInWith = createAssigner(function(object, source, srcIndex, customizer) {
-  copyObject(source, keysIn(source), object, customizer);
-});
-
-module.exports = assignInWith;
-
-},{"lodash.keysin":34,"lodash.rest":37}],34:[function(require,module,exports){
-(function (global){
-/**
- * lodash (Custom Build) <https://lodash.com/>
- * Build: `lodash modularize exports="npm" -o ./`
- * Copyright jQuery Foundation and other contributors <https://jquery.org/>
- * Released under MIT license <https://lodash.com/license>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- */
-
-/** Used as references for various `Number` constants. */
-var MAX_SAFE_INTEGER = 9007199254740991;
-
-/** `Object#toString` result references. */
-var argsTag = '[object Arguments]',
-    funcTag = '[object Function]',
-    genTag = '[object GeneratorFunction]',
-    stringTag = '[object String]';
-
-/** Used to detect unsigned integer values. */
-var reIsUint = /^(?:0|[1-9]\d*)$/;
-
-/** Used to determine if values are of the language type `Object`. */
-var objectTypes = {
-  'function': true,
-  'object': true
-};
-
-/** Detect free variable `exports`. */
-var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType)
-  ? exports
-  : undefined;
-
-/** Detect free variable `module`. */
-var freeModule = (objectTypes[typeof module] && module && !module.nodeType)
-  ? module
-  : undefined;
-
-/** Detect free variable `global` from Node.js. */
-var freeGlobal = checkGlobal(freeExports && freeModule && typeof global == 'object' && global);
-
-/** Detect free variable `self`. */
-var freeSelf = checkGlobal(objectTypes[typeof self] && self);
-
-/** Detect free variable `window`. */
-var freeWindow = checkGlobal(objectTypes[typeof window] && window);
-
-/** Detect `this` as the global object. */
-var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
-
-/**
- * Used as a reference to the global object.
- *
- * The `this` value is used if it's the global object to avoid Greasemonkey's
- * restricted `window` object, otherwise the `window` object is used.
- */
-var root = freeGlobal ||
-  ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) ||
-    freeSelf || thisGlobal || Function('return this')();
-
-/**
- * The base implementation of `_.times` without support for iteratee shorthands
- * or max array length checks.
- *
- * @private
- * @param {number} n The number of times to invoke `iteratee`.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array} Returns the array of results.
- */
-function baseTimes(n, iteratee) {
-  var index = -1,
-      result = Array(n);
-
-  while (++index < n) {
-    result[index] = iteratee(index);
-  }
-  return result;
-}
-
-/**
- * Checks if `value` is a global object.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {null|Object} Returns `value` if it's a global object, else `null`.
- */
-function checkGlobal(value) {
-  return (value && value.Object === Object) ? value : null;
-}
-
-/**
- * Converts `iterator` to an array.
- *
- * @private
- * @param {Object} iterator The iterator to convert.
- * @returns {Array} Returns the converted array.
- */
-function iteratorToArray(iterator) {
-  var data,
-      result = [];
-
-  while (!(data = iterator.next()).done) {
-    result.push(data.value);
-  }
-  return result;
-}
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/6.0/#sec-object.prototype.tostring)
- * of values.
- */
-var objectToString = objectProto.toString;
-
-/** Built-in value references. */
-var Reflect = root.Reflect,
-    enumerate = Reflect ? Reflect.enumerate : undefined,
-    propertyIsEnumerable = objectProto.propertyIsEnumerable;
-
-/**
- * The base implementation of `_.keysIn` which doesn't skip the constructor
- * property of prototypes or treat sparse arrays as dense.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- */
-function baseKeysIn(object) {
-  object = object == null ? object : Object(object);
-
-  var result = [];
-  for (var key in object) {
-    result.push(key);
-  }
-  return result;
-}
-
-// Fallback for IE < 9 with es6-shim.
-if (enumerate && !propertyIsEnumerable.call({ 'valueOf': 1 }, 'valueOf')) {
-  baseKeysIn = function(object) {
-    return iteratorToArray(enumerate(object));
-  };
-}
-
-/**
- * The base implementation of `_.property` without support for deep paths.
- *
- * @private
- * @param {string} key The key of the property to get.
- * @returns {Function} Returns the new accessor function.
- */
-function baseProperty(key) {
-  return function(object) {
-    return object == null ? undefined : object[key];
-  };
-}
-
-/**
- * Gets the "length" property value of `object`.
- *
- * **Note:** This function is used to avoid a
- * [JIT bug](https://bugs.webkit.org/show_bug.cgi?id=142792) that affects
- * Safari on at least iOS 8.1-8.3 ARM64.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {*} Returns the "length" value.
- */
-var getLength = baseProperty('length');
-
-/**
- * Creates an array of index keys for `object` values of arrays,
- * `arguments` objects, and strings, otherwise `null` is returned.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array|null} Returns index keys, else `null`.
- */
-function indexKeys(object) {
-  var length = object ? object.length : undefined;
-  if (isLength(length) &&
-      (isArray(object) || isString(object) || isArguments(object))) {
-    return baseTimes(length, String);
-  }
-  return null;
-}
-
-/**
- * Checks if `value` is a valid array-like index.
- *
- * @private
- * @param {*} value The value to check.
- * @param {number} [length=MAX_SAFE_INTEGER] The upper bounds of a valid index.
- * @returns {boolean} Returns `true` if `value` is a valid index, else `false`.
- */
-function isIndex(value, length) {
-  length = length == null ? MAX_SAFE_INTEGER : length;
-  return !!length &&
-    (typeof value == 'number' || reIsUint.test(value)) &&
-    (value > -1 && value % 1 == 0 && value < length);
-}
-
-/**
- * Checks if `value` is likely a prototype object.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a prototype, else `false`.
- */
-function isPrototype(value) {
-  var Ctor = value && value.constructor,
-      proto = (typeof Ctor == 'function' && Ctor.prototype) || objectProto;
-
-  return value === proto;
-}
-
-/**
- * Checks if `value` is likely an `arguments` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isArguments(function() { return arguments; }());
- * // => true
- *
- * _.isArguments([1, 2, 3]);
- * // => false
- */
-function isArguments(value) {
-  // Safari 8.1 incorrectly makes `arguments.callee` enumerable in strict mode.
-  return isArrayLikeObject(value) && hasOwnProperty.call(value, 'callee') &&
-    (!propertyIsEnumerable.call(value, 'callee') || objectToString.call(value) == argsTag);
-}
-
-/**
- * Checks if `value` is classified as an `Array` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @type {Function}
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isArray([1, 2, 3]);
- * // => true
- *
- * _.isArray(document.body.children);
- * // => false
- *
- * _.isArray('abc');
- * // => false
- *
- * _.isArray(_.noop);
- * // => false
- */
-var isArray = Array.isArray;
-
-/**
- * Checks if `value` is array-like. A value is considered array-like if it's
- * not a function and has a `value.length` that's an integer greater than or
- * equal to `0` and less than or equal to `Number.MAX_SAFE_INTEGER`.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is array-like, else `false`.
- * @example
- *
- * _.isArrayLike([1, 2, 3]);
- * // => true
- *
- * _.isArrayLike(document.body.children);
- * // => true
- *
- * _.isArrayLike('abc');
- * // => true
- *
- * _.isArrayLike(_.noop);
- * // => false
- */
-function isArrayLike(value) {
-  return value != null && isLength(getLength(value)) && !isFunction(value);
-}
-
-/**
- * This method is like `_.isArrayLike` except that it also checks if `value`
- * is an object.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an array-like object,
- *  else `false`.
- * @example
- *
- * _.isArrayLikeObject([1, 2, 3]);
- * // => true
- *
- * _.isArrayLikeObject(document.body.children);
- * // => true
- *
- * _.isArrayLikeObject('abc');
- * // => false
- *
- * _.isArrayLikeObject(_.noop);
- * // => false
- */
-function isArrayLikeObject(value) {
-  return isObjectLike(value) && isArrayLike(value);
-}
-
-/**
- * Checks if `value` is classified as a `Function` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isFunction(_);
- * // => true
- *
- * _.isFunction(/abc/);
- * // => false
- */
-function isFunction(value) {
-  // The use of `Object#toString` avoids issues with the `typeof` operator
-  // in Safari 8 which returns 'object' for typed array and weak map constructors,
-  // and PhantomJS 1.9 which returns 'function' for `NodeList` instances.
-  var tag = isObject(value) ? objectToString.call(value) : '';
-  return tag == funcTag || tag == genTag;
-}
-
-/**
- * Checks if `value` is a valid array-like length.
- *
- * **Note:** This function is loosely based on
- * [`ToLength`](http://ecma-international.org/ecma-262/6.0/#sec-tolength).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a valid length,
- *  else `false`.
- * @example
- *
- * _.isLength(3);
- * // => true
- *
- * _.isLength(Number.MIN_VALUE);
- * // => false
- *
- * _.isLength(Infinity);
- * // => false
- *
- * _.isLength('3');
- * // => false
- */
-function isLength(value) {
-  return typeof value == 'number' &&
-    value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
-}
-
-/**
- * Checks if `value` is the
- * [language type](http://www.ecma-international.org/ecma-262/6.0/#sec-ecmascript-language-types)
- * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an object, else `false`.
- * @example
- *
- * _.isObject({});
- * // => true
- *
- * _.isObject([1, 2, 3]);
- * // => true
- *
- * _.isObject(_.noop);
- * // => true
- *
- * _.isObject(null);
- * // => false
- */
-function isObject(value) {
-  var type = typeof value;
-  return !!value && (type == 'object' || type == 'function');
-}
-
-/**
- * Checks if `value` is object-like. A value is object-like if it's not `null`
- * and has a `typeof` result of "object".
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
- * @example
- *
- * _.isObjectLike({});
- * // => true
- *
- * _.isObjectLike([1, 2, 3]);
- * // => true
- *
- * _.isObjectLike(_.noop);
- * // => false
- *
- * _.isObjectLike(null);
- * // => false
- */
-function isObjectLike(value) {
-  return !!value && typeof value == 'object';
-}
-
-/**
- * Checks if `value` is classified as a `String` primitive or object.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isString('abc');
- * // => true
- *
- * _.isString(1);
- * // => false
- */
-function isString(value) {
-  return typeof value == 'string' ||
-    (!isArray(value) && isObjectLike(value) && objectToString.call(value) == stringTag);
-}
-
-/**
- * Creates an array of the own and inherited enumerable property names of `object`.
- *
- * **Note:** Non-object values are coerced to objects.
- *
- * @static
- * @memberOf _
- * @since 3.0.0
- * @category Object
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- * @example
- *
- * function Foo() {
- *   this.a = 1;
- *   this.b = 2;
- * }
- *
- * Foo.prototype.c = 3;
- *
- * _.keysIn(new Foo);
- * // => ['a', 'b', 'c'] (iteration order is not guaranteed)
- */
-function keysIn(object) {
-  var index = -1,
-      isProto = isPrototype(object),
-      props = baseKeysIn(object),
-      propsLength = props.length,
-      indexes = indexKeys(object),
-      skipIndexes = !!indexes,
-      result = indexes || [],
-      length = result.length;
-
-  while (++index < propsLength) {
-    var key = props[index];
-    if (!(skipIndexes && (key == 'length' || isIndex(key, length))) &&
-        !(key == 'constructor' && (isProto || !hasOwnProperty.call(object, key)))) {
-      result.push(key);
-    }
-  }
-  return result;
-}
-
-module.exports = keysIn;
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],35:[function(require,module,exports){
-/**
- * lodash (Custom Build) <https://lodash.com/>
- * Build: `lodash modularize exports="npm" -o ./`
- * Copyright jQuery Foundation and other contributors <https://jquery.org/>
- * Released under MIT license <https://lodash.com/license>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- */
-var baseFlatten = require('lodash._baseflatten'),
-    rest = require('lodash.rest');
-
-/** Used as references for various `Number` constants. */
-var INFINITY = 1 / 0;
-
-/** `Object#toString` result references. */
-var symbolTag = '[object Symbol]';
-
-/**
- * A specialized version of `_.map` for arrays without support for iteratee
- * shorthands.
- *
- * @private
- * @param {Array} array The array to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array} Returns the new mapped array.
- */
-function arrayMap(array, iteratee) {
-  var index = -1,
-      length = array.length,
-      result = Array(length);
-
-  while (++index < length) {
-    result[index] = iteratee(array[index], index, array);
-  }
-  return result;
-}
-
-/**
- * A specialized version of `_.reduce` for arrays without support for
- * iteratee shorthands.
- *
- * @private
- * @param {Array} array The array to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @param {*} [accumulator] The initial value.
- * @param {boolean} [initAccum] Specify using the first element of `array` as
- *  the initial value.
- * @returns {*} Returns the accumulated value.
- */
-function arrayReduce(array, iteratee, accumulator, initAccum) {
-  var index = -1,
-      length = array.length;
-
-  if (initAccum && length) {
-    accumulator = array[++index];
-  }
-  while (++index < length) {
-    accumulator = iteratee(accumulator, array[index], index, array);
-  }
-  return accumulator;
-}
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/6.0/#sec-object.prototype.tostring)
- * of values.
- */
-var objectToString = objectProto.toString;
-
-/**
- * The base implementation of `_.pick` without support for individual
- * property identifiers.
- *
- * @private
- * @param {Object} object The source object.
- * @param {string[]} props The property identifiers to pick.
- * @returns {Object} Returns the new object.
- */
-function basePick(object, props) {
-  object = Object(object);
-  return arrayReduce(props, function(result, key) {
-    if (key in object) {
-      result[key] = object[key];
-    }
-    return result;
-  }, {});
-}
-
-/**
- * Converts `value` to a string key if it's not a string or symbol.
- *
- * @private
- * @param {*} value The value to inspect.
- * @returns {string|symbol} Returns the key.
- */
-function toKey(value) {
-  if (typeof value == 'string' || isSymbol(value)) {
-    return value;
-  }
-  var result = (value + '');
-  return (result == '0' && (1 / value) == -INFINITY) ? '-0' : result;
-}
-
-/**
- * Checks if `value` is object-like. A value is object-like if it's not `null`
- * and has a `typeof` result of "object".
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
- * @example
- *
- * _.isObjectLike({});
- * // => true
- *
- * _.isObjectLike([1, 2, 3]);
- * // => true
- *
- * _.isObjectLike(_.noop);
- * // => false
- *
- * _.isObjectLike(null);
- * // => false
- */
-function isObjectLike(value) {
-  return !!value && typeof value == 'object';
-}
-
-/**
- * Checks if `value` is classified as a `Symbol` primitive or object.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isSymbol(Symbol.iterator);
- * // => true
- *
- * _.isSymbol('abc');
- * // => false
- */
-function isSymbol(value) {
-  return typeof value == 'symbol' ||
-    (isObjectLike(value) && objectToString.call(value) == symbolTag);
-}
-
-/**
- * Creates an object composed of the picked `object` properties.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Object
- * @param {Object} object The source object.
- * @param {...(string|string[])} [props] The property identifiers to pick.
- * @returns {Object} Returns the new object.
- * @example
- *
- * var object = { 'a': 1, 'b': '2', 'c': 3 };
- *
- * _.pick(object, ['a', 'c']);
- * // => { 'a': 1, 'c': 3 }
- */
-var pick = rest(function(object, props) {
-  return object == null ? {} : basePick(object, arrayMap(baseFlatten(props, 1), toKey));
-});
-
-module.exports = pick;
-
-},{"lodash._baseflatten":36,"lodash.rest":37}],36:[function(require,module,exports){
-/**
- * lodash (Custom Build) <https://lodash.com/>
- * Build: `lodash modularize exports="npm" -o ./`
- * Copyright jQuery Foundation and other contributors <https://jquery.org/>
- * Released under MIT license <https://lodash.com/license>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- */
-
-/** Used as references for various `Number` constants. */
-var MAX_SAFE_INTEGER = 9007199254740991;
-
-/** `Object#toString` result references. */
-var argsTag = '[object Arguments]',
-    funcTag = '[object Function]',
-    genTag = '[object GeneratorFunction]';
-
-/**
- * Appends the elements of `values` to `array`.
- *
- * @private
- * @param {Array} array The array to modify.
- * @param {Array} values The values to append.
- * @returns {Array} Returns `array`.
- */
-function arrayPush(array, values) {
-  var index = -1,
-      length = values.length,
-      offset = array.length;
-
-  while (++index < length) {
-    array[offset + index] = values[index];
-  }
-  return array;
-}
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/6.0/#sec-object.prototype.tostring)
- * of values.
- */
-var objectToString = objectProto.toString;
-
-/** Built-in value references. */
-var propertyIsEnumerable = objectProto.propertyIsEnumerable;
-
-/**
- * The base implementation of `_.flatten` with support for restricting flattening.
- *
- * @private
- * @param {Array} array The array to flatten.
- * @param {number} depth The maximum recursion depth.
- * @param {boolean} [predicate=isFlattenable] The function invoked per iteration.
- * @param {boolean} [isStrict] Restrict to values that pass `predicate` checks.
- * @param {Array} [result=[]] The initial result value.
- * @returns {Array} Returns the new flattened array.
- */
-function baseFlatten(array, depth, predicate, isStrict, result) {
-  var index = -1,
-      length = array.length;
-
-  predicate || (predicate = isFlattenable);
-  result || (result = []);
-
-  while (++index < length) {
-    var value = array[index];
-    if (depth > 0 && predicate(value)) {
-      if (depth > 1) {
-        // Recursively flatten arrays (susceptible to call stack limits).
-        baseFlatten(value, depth - 1, predicate, isStrict, result);
-      } else {
-        arrayPush(result, value);
-      }
-    } else if (!isStrict) {
-      result[result.length] = value;
-    }
-  }
-  return result;
-}
-
-/**
- * The base implementation of `_.property` without support for deep paths.
- *
- * @private
- * @param {string} key The key of the property to get.
- * @returns {Function} Returns the new accessor function.
- */
-function baseProperty(key) {
-  return function(object) {
-    return object == null ? undefined : object[key];
-  };
-}
-
-/**
- * Gets the "length" property value of `object`.
- *
- * **Note:** This function is used to avoid a
- * [JIT bug](https://bugs.webkit.org/show_bug.cgi?id=142792) that affects
- * Safari on at least iOS 8.1-8.3 ARM64.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {*} Returns the "length" value.
- */
-var getLength = baseProperty('length');
-
-/**
- * Checks if `value` is a flattenable `arguments` object or array.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is flattenable, else `false`.
- */
-function isFlattenable(value) {
-  return isArray(value) || isArguments(value);
-}
-
-/**
- * Checks if `value` is likely an `arguments` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isArguments(function() { return arguments; }());
- * // => true
- *
- * _.isArguments([1, 2, 3]);
- * // => false
- */
-function isArguments(value) {
-  // Safari 8.1 incorrectly makes `arguments.callee` enumerable in strict mode.
-  return isArrayLikeObject(value) && hasOwnProperty.call(value, 'callee') &&
-    (!propertyIsEnumerable.call(value, 'callee') || objectToString.call(value) == argsTag);
-}
-
-/**
- * Checks if `value` is classified as an `Array` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @type {Function}
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isArray([1, 2, 3]);
- * // => true
- *
- * _.isArray(document.body.children);
- * // => false
- *
- * _.isArray('abc');
- * // => false
- *
- * _.isArray(_.noop);
- * // => false
- */
-var isArray = Array.isArray;
-
-/**
- * Checks if `value` is array-like. A value is considered array-like if it's
- * not a function and has a `value.length` that's an integer greater than or
- * equal to `0` and less than or equal to `Number.MAX_SAFE_INTEGER`.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is array-like, else `false`.
- * @example
- *
- * _.isArrayLike([1, 2, 3]);
- * // => true
- *
- * _.isArrayLike(document.body.children);
- * // => true
- *
- * _.isArrayLike('abc');
- * // => true
- *
- * _.isArrayLike(_.noop);
- * // => false
- */
-function isArrayLike(value) {
-  return value != null && isLength(getLength(value)) && !isFunction(value);
-}
-
-/**
- * This method is like `_.isArrayLike` except that it also checks if `value`
- * is an object.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an array-like object,
- *  else `false`.
- * @example
- *
- * _.isArrayLikeObject([1, 2, 3]);
- * // => true
- *
- * _.isArrayLikeObject(document.body.children);
- * // => true
- *
- * _.isArrayLikeObject('abc');
- * // => false
- *
- * _.isArrayLikeObject(_.noop);
- * // => false
- */
-function isArrayLikeObject(value) {
-  return isObjectLike(value) && isArrayLike(value);
-}
-
-/**
- * Checks if `value` is classified as a `Function` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isFunction(_);
- * // => true
- *
- * _.isFunction(/abc/);
- * // => false
- */
-function isFunction(value) {
-  // The use of `Object#toString` avoids issues with the `typeof` operator
-  // in Safari 8 which returns 'object' for typed array and weak map constructors,
-  // and PhantomJS 1.9 which returns 'function' for `NodeList` instances.
-  var tag = isObject(value) ? objectToString.call(value) : '';
-  return tag == funcTag || tag == genTag;
-}
-
-/**
- * Checks if `value` is a valid array-like length.
- *
- * **Note:** This function is loosely based on
- * [`ToLength`](http://ecma-international.org/ecma-262/6.0/#sec-tolength).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a valid length,
- *  else `false`.
- * @example
- *
- * _.isLength(3);
- * // => true
- *
- * _.isLength(Number.MIN_VALUE);
- * // => false
- *
- * _.isLength(Infinity);
- * // => false
- *
- * _.isLength('3');
- * // => false
- */
-function isLength(value) {
-  return typeof value == 'number' &&
-    value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
-}
-
-/**
- * Checks if `value` is the
- * [language type](http://www.ecma-international.org/ecma-262/6.0/#sec-ecmascript-language-types)
- * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an object, else `false`.
- * @example
- *
- * _.isObject({});
- * // => true
- *
- * _.isObject([1, 2, 3]);
- * // => true
- *
- * _.isObject(_.noop);
- * // => true
- *
- * _.isObject(null);
- * // => false
- */
-function isObject(value) {
-  var type = typeof value;
-  return !!value && (type == 'object' || type == 'function');
-}
-
-/**
- * Checks if `value` is object-like. A value is object-like if it's not `null`
- * and has a `typeof` result of "object".
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
- * @example
- *
- * _.isObjectLike({});
- * // => true
- *
- * _.isObjectLike([1, 2, 3]);
- * // => true
- *
- * _.isObjectLike(_.noop);
- * // => false
- *
- * _.isObjectLike(null);
- * // => false
- */
-function isObjectLike(value) {
-  return !!value && typeof value == 'object';
-}
-
-module.exports = baseFlatten;
-
-},{}],37:[function(require,module,exports){
-/**
- * lodash (Custom Build) <https://lodash.com/>
- * Build: `lodash modularize exports="npm" -o ./`
- * Copyright jQuery Foundation and other contributors <https://jquery.org/>
- * Released under MIT license <https://lodash.com/license>
- * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
- * Copyright Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
- */
-
-/** Used as the `TypeError` message for "Functions" methods. */
-var FUNC_ERROR_TEXT = 'Expected a function';
-
-/** Used as references for various `Number` constants. */
-var INFINITY = 1 / 0,
-    MAX_INTEGER = 1.7976931348623157e+308,
-    NAN = 0 / 0;
-
-/** `Object#toString` result references. */
-var funcTag = '[object Function]',
-    genTag = '[object GeneratorFunction]',
-    symbolTag = '[object Symbol]';
-
-/** Used to match leading and trailing whitespace. */
-var reTrim = /^\s+|\s+$/g;
-
-/** Used to detect bad signed hexadecimal string values. */
-var reIsBadHex = /^[-+]0x[0-9a-f]+$/i;
-
-/** Used to detect binary string values. */
-var reIsBinary = /^0b[01]+$/i;
-
-/** Used to detect octal string values. */
-var reIsOctal = /^0o[0-7]+$/i;
-
-/** Built-in method references without a dependency on `root`. */
-var freeParseInt = parseInt;
-
-/**
- * A faster alternative to `Function#apply`, this function invokes `func`
- * with the `this` binding of `thisArg` and the arguments of `args`.
- *
- * @private
- * @param {Function} func The function to invoke.
- * @param {*} thisArg The `this` binding of `func`.
- * @param {Array} args The arguments to invoke `func` with.
- * @returns {*} Returns the result of `func`.
- */
-function apply(func, thisArg, args) {
-  var length = args.length;
-  switch (length) {
-    case 0: return func.call(thisArg);
-    case 1: return func.call(thisArg, args[0]);
-    case 2: return func.call(thisArg, args[0], args[1]);
-    case 3: return func.call(thisArg, args[0], args[1], args[2]);
-  }
-  return func.apply(thisArg, args);
-}
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/6.0/#sec-object.prototype.tostring)
- * of values.
- */
-var objectToString = objectProto.toString;
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeMax = Math.max;
-
-/**
- * Creates a function that invokes `func` with the `this` binding of the
- * created function and arguments from `start` and beyond provided as
- * an array.
- *
- * **Note:** This method is based on the
- * [rest parameter](https://mdn.io/rest_parameters).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Function
- * @param {Function} func The function to apply a rest parameter to.
- * @param {number} [start=func.length-1] The start position of the rest parameter.
- * @returns {Function} Returns the new function.
- * @example
- *
- * var say = _.rest(function(what, names) {
- *   return what + ' ' + _.initial(names).join(', ') +
- *     (_.size(names) > 1 ? ', & ' : '') + _.last(names);
- * });
- *
- * say('hello', 'fred', 'barney', 'pebbles');
- * // => 'hello fred, barney, & pebbles'
- */
-function rest(func, start) {
-  if (typeof func != 'function') {
-    throw new TypeError(FUNC_ERROR_TEXT);
-  }
-  start = nativeMax(start === undefined ? (func.length - 1) : toInteger(start), 0);
-  return function() {
-    var args = arguments,
-        index = -1,
-        length = nativeMax(args.length - start, 0),
-        array = Array(length);
-
-    while (++index < length) {
-      array[index] = args[start + index];
-    }
-    switch (start) {
-      case 0: return func.call(this, array);
-      case 1: return func.call(this, args[0], array);
-      case 2: return func.call(this, args[0], args[1], array);
-    }
-    var otherArgs = Array(start + 1);
-    index = -1;
-    while (++index < start) {
-      otherArgs[index] = args[index];
-    }
-    otherArgs[start] = array;
-    return apply(func, this, otherArgs);
-  };
-}
-
-/**
- * Checks if `value` is classified as a `Function` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isFunction(_);
- * // => true
- *
- * _.isFunction(/abc/);
- * // => false
- */
-function isFunction(value) {
-  // The use of `Object#toString` avoids issues with the `typeof` operator
-  // in Safari 8 which returns 'object' for typed array and weak map constructors,
-  // and PhantomJS 1.9 which returns 'function' for `NodeList` instances.
-  var tag = isObject(value) ? objectToString.call(value) : '';
-  return tag == funcTag || tag == genTag;
-}
-
-/**
- * Checks if `value` is the
- * [language type](http://www.ecma-international.org/ecma-262/6.0/#sec-ecmascript-language-types)
- * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an object, else `false`.
- * @example
- *
- * _.isObject({});
- * // => true
- *
- * _.isObject([1, 2, 3]);
- * // => true
- *
- * _.isObject(_.noop);
- * // => true
- *
- * _.isObject(null);
- * // => false
- */
-function isObject(value) {
-  var type = typeof value;
-  return !!value && (type == 'object' || type == 'function');
-}
-
-/**
- * Checks if `value` is object-like. A value is object-like if it's not `null`
- * and has a `typeof` result of "object".
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
- * @example
- *
- * _.isObjectLike({});
- * // => true
- *
- * _.isObjectLike([1, 2, 3]);
- * // => true
- *
- * _.isObjectLike(_.noop);
- * // => false
- *
- * _.isObjectLike(null);
- * // => false
- */
-function isObjectLike(value) {
-  return !!value && typeof value == 'object';
-}
-
-/**
- * Checks if `value` is classified as a `Symbol` primitive or object.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is correctly classified,
- *  else `false`.
- * @example
- *
- * _.isSymbol(Symbol.iterator);
- * // => true
- *
- * _.isSymbol('abc');
- * // => false
- */
-function isSymbol(value) {
-  return typeof value == 'symbol' ||
-    (isObjectLike(value) && objectToString.call(value) == symbolTag);
-}
-
-/**
- * Converts `value` to a finite number.
- *
- * @static
- * @memberOf _
- * @since 4.12.0
- * @category Lang
- * @param {*} value The value to convert.
- * @returns {number} Returns the converted number.
- * @example
- *
- * _.toFinite(3.2);
- * // => 3.2
- *
- * _.toFinite(Number.MIN_VALUE);
- * // => 5e-324
- *
- * _.toFinite(Infinity);
- * // => 1.7976931348623157e+308
- *
- * _.toFinite('3.2');
- * // => 3.2
- */
-function toFinite(value) {
-  if (!value) {
-    return value === 0 ? value : 0;
-  }
-  value = toNumber(value);
-  if (value === INFINITY || value === -INFINITY) {
-    var sign = (value < 0 ? -1 : 1);
-    return sign * MAX_INTEGER;
-  }
-  return value === value ? value : 0;
-}
-
-/**
- * Converts `value` to an integer.
- *
- * **Note:** This function is loosely based on
- * [`ToInteger`](http://www.ecma-international.org/ecma-262/6.0/#sec-tointeger).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to convert.
- * @returns {number} Returns the converted integer.
- * @example
- *
- * _.toInteger(3.2);
- * // => 3
- *
- * _.toInteger(Number.MIN_VALUE);
- * // => 0
- *
- * _.toInteger(Infinity);
- * // => 1.7976931348623157e+308
- *
- * _.toInteger('3.2');
- * // => 3
- */
-function toInteger(value) {
-  var result = toFinite(value),
-      remainder = result % 1;
-
-  return result === result ? (remainder ? result - remainder : result) : 0;
-}
-
-/**
- * Converts `value` to a number.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to process.
- * @returns {number} Returns the number.
- * @example
- *
- * _.toNumber(3.2);
- * // => 3.2
- *
- * _.toNumber(Number.MIN_VALUE);
- * // => 5e-324
- *
- * _.toNumber(Infinity);
- * // => Infinity
- *
- * _.toNumber('3.2');
- * // => 3.2
- */
-function toNumber(value) {
-  if (typeof value == 'number') {
-    return value;
-  }
-  if (isSymbol(value)) {
-    return NAN;
-  }
-  if (isObject(value)) {
-    var other = isFunction(value.valueOf) ? value.valueOf() : value;
-    value = isObject(other) ? (other + '') : other;
-  }
-  if (typeof value != 'string') {
-    return value === 0 ? value : +value;
-  }
-  value = value.replace(reTrim, '');
-  var isBinary = reIsBinary.test(value);
-  return (isBinary || reIsOctal.test(value))
-    ? freeParseInt(value.slice(2), isBinary ? 2 : 8)
-    : (reIsBadHex.test(value) ? NAN : +value);
-}
-
-module.exports = rest;
-
-},{}],38:[function(require,module,exports){
-
-var looper = module.exports = function (fun) {
-  (function next () {
-    var loop = true, returned = false, sync = false
-    do {
-      sync = true; loop = false
-      fun.call(this, function () {
-        if(sync) loop = true
-        else     next()
-      })
-      sync = false
-    } while(loop)
-  })()
-}
-
-},{}],39:[function(require,module,exports){
-(function (Buffer){
-'use strict'
-var sodium = require('chloride')
-var Reader = require('pull-reader')
-var increment = require('increment-buffer')
-var through = require('pull-through')
-var split = require('split-buffer')
-
-var isBuffer = Buffer.isBuffer
-var concat = Buffer.concat
-
-var box = sodium.crypto_secretbox_easy
-var unbox = sodium.crypto_secretbox_open_easy  
-
-function unbox_detached (mac, boxed, nonce, key) {
-  return sodium.crypto_secretbox_open_easy(concat([mac, boxed]), nonce, key)
-}
-
-var max = 1024*4
-
-var NONCE_LEN = 24
-var HEADER_LEN = 2+16+16
-
-function isZeros(b) {
-  for(var i = 0; i < b.length; i++)
-    if(b[i] !== 0) return false
-  return true
-}
-
-function randomSecret(n) {
-  var rand = new Buffer(n)
-  sodium.randombytes(rand)
-  return rand
-}
-
-function copy (a) {
-  var b = new Buffer(a.length)
-  a.copy(b, 0, 0, a.length)
-  return b
-}
-
-exports.createBoxStream =
-exports.createEncryptStream = function (key, init_nonce) {
-
-  if(key.length === 56) {
-    init_nonce = key.slice(32, 56)
-    key = key.slice(0, 32)
-  }
-  else if(!(key.length === 32 && init_nonce.length === 24))
-    throw new Error('nonce must be 24 bytes')
-
-  // we need two nonces because increment mutates,
-  // and we need the next for the header,
-  // and the next next nonce for the packet
-  var nonce1 = copy(init_nonce), nonce2 = copy(init_nonce)
-  var head = new Buffer(18)
-
-  return through(function (data) {
-
-    if('string' === typeof data)
-      data = new Buffer(data, 'utf8')
-    else if(!isBuffer(data))
-      return this.emit('error', new Error('must be buffer'))
-
-    if(data.length === 0) return
-
-    var input = split(data, max)
-
-    for(var i = 0; i < input.length; i++) {
-      head.writeUInt16BE(input[i].length, 0)
-      var boxed = box(input[i], increment(nonce2), key)
-      //write the mac into the header.
-      boxed.copy(head, 2, 0, 16)
-
-      this.queue(box(head, nonce1, key))
-      this.queue(boxed.slice(16, 16 + input[i].length))
-
-      increment(increment(nonce1)); increment(nonce2)
-    }
-  }, function (err) {
-    if(err) return this.queue(null)
-
-    //handle special-case of empty session
-    //final header is same length as header except all zeros (inside box)
-    var final = new Buffer(2+16); final.fill(0)
-    this.queue(box(final, nonce1, key))
-    this.queue(null)
-  })
-
-}
-exports.createUnboxStream =
-exports.createDecryptStream = function (key, nonce) {
-
-
-  if(key.length == 56) {
-    nonce = key.slice(32, 56)
-    key = key.slice(0, 32)
-  }
-  else if(!(key.length === 32 && nonce.length === 24))
-    throw new Error('nonce must be 24 bytes')
-
-  var reader = Reader(), first = true,  ended
-  var first = true
-
-  return function (read) {
-    reader(read)
-    return function (end, cb) {
-      if(end) return reader.abort(end, cb)
-      //use abort when the input was invalid,
-      //but the source hasn't actually ended yet.
-      function abort(err) {
-        reader.abort(ended = err || true, cb)
-      }
-
-      if(ended) return cb(ended)
-      reader.read(HEADER_LEN, function (err, cipherheader) {
-        if(err === true) return cb(ended = new Error('unexpected hangup'))
-        if(err) return cb(ended = err)
-
-        var header = unbox(cipherheader, nonce, key)
-
-        if(!header)
-          return abort(new Error('invalid header'))
-
-        //valid end of stream
-        if(isZeros(header))
-          return cb(ended = true)
-
-        var length = header.readUInt16BE(0)
-        var mac = header.slice(2, 34)
-
-        reader.read(length, function (err, cipherpacket) {
-          if(err) return cb(ended = err)
-          //recreate a valid packet
-          //TODO: PR to sodium bindings for detached box/open
-          var plainpacket = unbox_detached(mac, cipherpacket, increment(nonce), key)
-          if(!plainpacket)
-            return abort(new Error('invalid packet'))
-
-          increment(nonce)
-          cb(null, plainpacket)
-        })
-      })
-    }
-  }
-}
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":8,"chloride":23,"increment-buffer":31,"pull-reader":44,"pull-through":77,"split-buffer":90}],40:[function(require,module,exports){
-var noop = function () {}
-
-function abortAll(ary, abort, cb) {
-  var n = ary.length
-  if(!n) return cb(abort)
-  ary.forEach(function (f) {
-    if(f) f(abort, next)
-    else next()
-  })
-
-  function next() {
-    if(--n) return
-    cb(abort)
-  }
-  if(!n) next()
-}
-
-module.exports = function (streams) {
-  return function (abort, cb) {
-    ;(function next () {
-      if(abort)
-        abortAll(streams, abort, cb)
-      else if(!streams.length)
-        cb(true)
-      else if(!streams[0])
-        streams.shift(), next()
-      else
-        streams[0](null, function (err, data) {
-          if(err) {
-            streams.shift() //drop the first, has already ended.
-            if(err === true) next()
-            else             abortAll(streams, err, cb)
-          }
-          else
-            cb(null, data)
-        })
-    })()
-  }
-}
-
-
-
-},{}],41:[function(require,module,exports){
-var Reader = require('pull-reader')
-var Writer = require('pull-pushable')
-var cat = require('pull-cat')
-var pair = require('pull-pair')
-
-function once (cb) {
-  var called = 0
-  return function (a, b, c) {
-    if(called++) return
-    cb(a, b, c)
-  }
-}
-
-function isFunction (f) {
-  return 'function' === typeof f
-}
-
-module.exports = function (opts, _cb) {
-  if(isFunction(opts)) _cb = opts, opts = {}
-  _cb = once(_cb || function noop () {})
-  var reader = Reader(opts && opts.timeout || 5e3)
-  var writer = Writer(function (err) {
-    if(err) _cb(err)
-  })
-
-  var p = pair()
-
-  return {
-    handshake: {
-      read: reader.read,
-      abort: function (err) {
-        writer.end(err)
-        reader.abort(err, function (err) {
-        })
-        _cb(err)
-      },
-      write: writer.push,
-      rest: function () {
-        writer.end()
-        return {
-          source: reader.read(),
-          sink: p.sink
-        }
-      }
-    },
-    sink: reader,
-    source: cat([writer, p.source])
-  }
-}
-
-},{"pull-cat":40,"pull-pair":42,"pull-pushable":43,"pull-reader":44}],42:[function(require,module,exports){
-'use strict'
-
-//a pair of pull streams where one drains from the other
-module.exports = function () {
-  var _read, waiting
-  function sink (read) {
-    if('function' !== typeof read)
-      throw new Error('read must be function')
-
-    if(_read)
-      throw new Error('already piped')
-    _read = read
-    if(waiting) {
-      var _waiting = waiting
-      waiting = null
-      _read.apply(null, _waiting)
-    }
-  }
-  function source (abort, cb) {
-    if(_read)
-      _read(abort, cb)
-    else
-      waiting = [abort, cb]
-  }
-
-  return {
-    source: source, sink: sink
-  }
-}
-
-
-},{}],43:[function(require,module,exports){
-module.exports = function (onClose) {
-  var buffer = [], ended, abort, cb
-
-  function callback (err, val) {
-    var _cb = cb
-    if(err && onClose) {
-      var c = onClose
-      onClose = null
-      c(err === true ? null : err)
-    }
-    cb = null
-    _cb(err, val)
-
-  }
-
-  function drain() {
-    if(!cb) return
-
-    if(abort)                        callback(abort)
-    else if(!buffer.length && ended) callback(ended)
-    else if(buffer.length)           callback(null, buffer.shift())
-  }
-
-  function read (_abort, _cb) {
-    if(_abort) {
-      abort = _abort
-      //if there is already a cb waiting, abort it.
-      if(cb) callback(abort)
-    }
-    cb = _cb
-    drain()
-  }
-
-  read.push = function (data) {
-    if(ended) return
-    buffer.push(data)
-    drain()
-  }
-
-  read.end = function (end) {
-    ended = ended || end || true;
-    drain()
-  }
-
-  return read
-}
-
-
-
-},{}],44:[function(require,module,exports){
-'use strict'
-var State = require('./state')
-
-function isInteger (i) {
-  return Number.isFinite(i)
-}
-
-function isFunction (f) {
-  return 'function' === typeof f
-}
-
-function maxDelay(fn, delay) {
-  if(!delay) return fn
-  return function (a, cb) {
-    var timer = setTimeout(function () {
-      fn(new Error('pull-reader: read exceeded timeout'), cb)
-    }, delay)
-    fn(a, function (err, value) {
-      clearTimeout(timer)
-      cb(err, value)
-    })
-
-  }
-
-}
-
-module.exports = function (timeout) {
-
-  var queue = [], read, readTimed, reading = false
-  var state = State(), ended, streaming, abort
-
-  function drain () {
-    while (queue.length) {
-      if(null == queue[0].length && state.has(1)) {
-        queue.shift().cb(null, state.get())
-      }
-      else if(state.has(queue[0].length)) {
-        var next = queue.shift()
-        next.cb(null, state.get(next.length))
-      }
-      else if(ended)
-        queue.shift().cb(ended)
-      else
-        return !!queue.length
-    }
-    //always read a little data
-    return queue.length || !state.has(1) || abort
-  }
-
-  function more () {
-    var d = drain()
-    if(d && !reading)
-    if(read && !reading && !streaming) {
-      reading = true
-      readTimed (null, function (err, data) {
-        reading = false
-        if(err) {
-          ended = err
-          return drain()
-        }
-        state.add(data)
-        more()
-      })
-    }
-  }
-
-  function reader (_read) {
-    if(abort) {
-      while(queue.length) queue.shift().cb(abort)
-      return cb && cb(abort)
-    }
-    readTimed = maxDelay(_read, timeout)
-    read = _read
-    more()
-  }
-
-  reader.abort = function (err, cb) {
-    abort = err || true
-    if(read) {
-      reading = true
-      read(abort, function () {
-        while(queue.length) queue.shift().cb(abort)
-        cb && cb(abort)
-      })
-    }
-    else
-      cb()
-  }
-
-  reader.read = function (len, timeout, cb) {
-    if(isFunction(timeout))
-      cb = timeout, timeout = 0
-    if(isFunction(cb)) {
-      queue.push({length: isInteger(len) ? len : null, cb: cb})
-      more()
-    }
-    else {
-      //switch into streaming mode for the rest of the stream.
-      streaming = true
-      //wait for the current read to complete
-      return function (abort, cb) {
-        //if there is anything still in the queue,
-        if(reading || state.has(1)) {
-          if(abort) return read(abort, cb)
-          queue.push({length: null, cb: cb})
-          more()
-        }
-        else
-          maxDelay(read, timeout)(abort, function (err, data) {
-            cb(err, data)
-          })
-      }
-    }
-  }
-
-  return reader
-}
-
-
-
-
-
-
-},{"./state":45}],45:[function(require,module,exports){
-(function (Buffer){
-
-module.exports = function () {
-
-  var buffers = [], length = 0
-
-  //just used for debugging...
-  function calcLength () {
-    return buffers.reduce(function (a, b) {
-      return a + b.length
-    }, 0)
-  }
-
-  return {
-    length: length,
-    data: this,
-    add: function (data) {
-      if(!Buffer.isBuffer(data))
-        throw new Error('data must be a buffer, was: ' + JSON.stringify(data))
-      this.length = length = length + data.length
-      buffers.push(data)
-      return this
-    },
-    has: function (n) {
-      if(null == n) return length > 0
-      return length >= n
-    },
-    get: function (n) {
-      var _length
-      if(n == null || n === length) {
-        length = 0
-        var _buffers = buffers
-        buffers = []
-        if(_buffers.length == 1)
-          return _buffers[0]
-        else
-          return Buffer.concat(_buffers)
-      } else if (buffers.length > 1 && n <= (_length = buffers[0].length)) {
-        var buf = buffers[0].slice(0, n)
-        if(n === _length) {
-          buffers.shift()
-        }
-        else {
-          buffers[0] = buffers[0].slice(n, _length)
-        }
-        length -= n
-        return buf
-      }  else if(n < length) {
-        var out = [], len = 0
-
-        while((len + buffers[0].length) < n) {
-          var b = buffers.shift()
-          len += b.length
-          out.push(b)
-        }
-
-        if(len < n) {
-          out.push(buffers[0].slice(0, n - len))
-          buffers[0] = buffers[0].slice(n - len, buffers[0].length)
-          this.length = length = length - n
-        }
-        return Buffer.concat(out)
-      }
-      else
-        throw new Error('could not get ' + n + ' bytes')
-    }
-  }
-
-}
-
-
-
-
-
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":8}],46:[function(require,module,exports){
-'use strict'
-
-var sources  = require('./sources')
-var sinks    = require('./sinks')
-var throughs = require('./throughs')
-
-exports = module.exports = require('./pull')
-
-for(var k in sources)
-  exports[k] = sources[k]
-
-for(var k in throughs)
-  exports[k] = throughs[k]
-
-for(var k in sinks)
-  exports[k] = sinks[k]
-
-
-},{"./pull":47,"./sinks":52,"./sources":59,"./throughs":68}],47:[function(require,module,exports){
-'use strict'
-
-module.exports = function pull (a) {
-  var length = arguments.length
-  if (typeof a === 'function' && a.length === 1) {
-    var args = new Array(length)
-    for(var i = 0; i < length; i++)
-      args[i] = arguments[i]
-    return function (read) {
-      args.unshift(read)
-      return pull.apply(null, args)
-    }
-  }
-
-  var read = a
-
-  if (read && typeof read.source === 'function') {
-    read = read.source
-  }
-
-  for (var i = 1; i < length; i++) {
-    var s = arguments[i]
-    if (typeof s === 'function') {
-      read = s(read)
-    } else if (s && typeof s === 'object') {
-      s.sink(read)
-      read = s.source
-    }
-  }
-
-  return read
-}
-
-
-
-
-
-
-},{}],48:[function(require,module,exports){
-'use strict'
-
-var reduce = require('./reduce')
-
-module.exports = function collect (cb) {
-  return reduce(function (arr, item) {
-    arr.push(item)
-    return arr
-  }, [], cb)
-}
-
-},{"./reduce":55}],49:[function(require,module,exports){
-'use strict'
-
-var reduce = require('./reduce')
-
-module.exports = function concat (cb) {
-  return reduce(function (a, b) {
-    return a + b
-  }, '', cb)
-}
-
-},{"./reduce":55}],50:[function(require,module,exports){
-'use strict'
-
-module.exports = function drain (op, done) {
-  var read, abort
-
-  function sink (_read) {
-    read = _read
-    if(abort) return sink.abort()
-    //this function is much simpler to write if you
-    //just use recursion, but by using a while loop
-    //we do not blow the stack if the stream happens to be sync.
-    ;(function next() {
-        var loop = true, cbed = false
-        while(loop) {
-          cbed = false
-          read(null, function (end, data) {
-            cbed = true
-            if(end = end || abort) {
-              loop = false
-              if(done) done(end === true ? null : end)
-              else if(end && end !== true)
-                throw end
-            }
-            else if(op && false === op(data) || abort) {
-              loop = false
-              read(abort || true, done || function () {})
-            }
-            else if(!loop){
-              next()
-            }
-          })
-          if(!cbed) {
-            loop = false
-            return
-          }
-        }
-      })()
-  }
-
-  sink.abort = function (err, cb) {
-    if('function' == typeof err)
-      cb = err, err = true
-    abort = err || true
-    if(read) return read(abort, cb || function () {})
-  }
-
-  return sink
-}
-
-},{}],51:[function(require,module,exports){
-'use strict'
-
-function id (e) { return e }
-var prop = require('../util/prop')
-var drain = require('./drain')
-
-module.exports = function find (test, cb) {
-  var ended = false
-  if(!cb)
-    cb = test, test = id
-  else
-    test = prop(test) || id
-
-  return drain(function (data) {
-    if(test(data)) {
-      ended = true
-      cb(null, data)
-    return false
-    }
-  }, function (err) {
-    if(ended) return //already called back
-    cb(err === true ? null : err, null)
-  })
-}
-
-
-
-
-
-},{"../util/prop":75,"./drain":50}],52:[function(require,module,exports){
-'use strict'
-
-module.exports = {
-  drain: require('./drain'),
-  onEnd: require('./on-end'),
-  log: require('./log'),
-  find: require('./find'),
-  reduce: require('./reduce'),
-  collect: require('./collect'),
-  concat: require('./concat')
-}
-
-
-},{"./collect":48,"./concat":49,"./drain":50,"./find":51,"./log":53,"./on-end":54,"./reduce":55}],53:[function(require,module,exports){
-'use strict'
-
-var drain = require('./drain')
-
-module.exports = function log (done) {
-  return drain(function (data) {
-    console.log(data)
-  }, done)
-}
-
-},{"./drain":50}],54:[function(require,module,exports){
-'use strict'
-
-var drain = require('./drain')
-
-module.exports = function onEnd (done) {
-  return drain(null, done)
-}
-
-},{"./drain":50}],55:[function(require,module,exports){
-'use strict'
-
-var drain = require('./drain')
-
-module.exports = function reduce (reducer, acc, cb) {
-  return drain(function (data) {
-    acc = reducer(acc, data)
-  }, function (err) {
-    cb(err, acc)
-  })
-}
-
-
-},{"./drain":50}],56:[function(require,module,exports){
-'use strict'
-
-module.exports = function count (max) {
-  var i = 0; max = max || Infinity
-  return function (end, cb) {
-    if(end) return cb && cb(end)
-    if(i > max)
-      return cb(true)
-    cb(null, i++)
-  }
-}
-
-
-
-},{}],57:[function(require,module,exports){
-'use strict'
-//a stream that ends immediately.
-module.exports = function empty () {
-  return function (abort, cb) {
-    cb(true)
-  }
-}
-
-},{}],58:[function(require,module,exports){
-'use strict'
-//a stream that errors immediately.
-module.exports = function error (err) {
-  return function (abort, cb) {
-    cb(err)
-  }
-}
-
-
-},{}],59:[function(require,module,exports){
-'use strict'
-module.exports = {
-  keys: require('./keys'),
-  once: require('./once'),
-  values: require('./values'),
-  count: require('./count'),
-  infinite: require('./infinite'),
-  empty: require('./empty'),
-  error: require('./error')
-}
-
-},{"./count":56,"./empty":57,"./error":58,"./infinite":60,"./keys":61,"./once":62,"./values":63}],60:[function(require,module,exports){
-'use strict'
-module.exports = function infinite (generate) {
-  generate = generate || Math.random
-  return function (end, cb) {
-    if(end) return cb && cb(end)
-    return cb(null, generate())
-  }
-}
-
-
-
-},{}],61:[function(require,module,exports){
-'use strict'
-var values = require('./values')
-module.exports = function (object) {
-  return values(Object.keys(object))
-}
-
-
-
-},{"./values":63}],62:[function(require,module,exports){
-'use strict'
-var abortCb = require('../util/abort-cb')
-
-module.exports = function once (value, onAbort) {
-  return function (abort, cb) {
-    if(abort)
-      return abortCb(cb, abort, onAbort)
-    if(value != null) {
-      var _value = value; value = null
-      cb(null, _value)
-    } else
-      cb(true)
-  }
-}
-
-
-
-},{"../util/abort-cb":74}],63:[function(require,module,exports){
-'use strict'
-var abortCb = require('../util/abort-cb')
-
-module.exports = function values (array, onAbort) {
-  if(!array)
-    return function (abort, cb) {
-      if(abort) return abortCb(cb, abort, onAbort)
-      return cb(true)
-    }
-  if(!Array.isArray(array))
-    array = Object.keys(array).map(function (k) {
-      return array[k]
-    })
-  var i = 0
-  return function (abort, cb) {
-    if(abort)
-      return abortCb(cb, abort, onAbort)
-    cb(i >= array.length || null, array[i++])
-  }
-}
-
-
-},{"../util/abort-cb":74}],64:[function(require,module,exports){
-'use strict'
-
-function id (e) { return e }
-var prop = require('../util/prop')
-
-module.exports = function asyncMap (map) {
-  if(!map) return id
-  map = prop(map)
-  var busy = false, abortCb, aborted
-  return function (read) {
-    return function next (abort, cb) {
-      if(aborted) return cb(aborted)
-      if(abort) {
-        aborted = abort
-        if(!busy) read(abort, cb)
-        else read(abort, function () {
-          //if we are still busy, wait for the mapper to complete.
-          if(busy) abortCb = cb
-          else cb(abort)
-        })
-      }
-      else
-        read(null, function (end, data) {
-          if(end) cb(end)
-          else if(aborted) cb(aborted)
-          else {
-            busy = true
-            map(data, function (err, data) {
-              busy = false
-              if(aborted) {
-                cb(aborted)
-                abortCb(aborted)
-              }
-              else if(err) next (err, cb)
-              else cb(null, data)
-            })
-          }
-        })
-    }
-  }
-}
-
-
-
-},{"../util/prop":75}],65:[function(require,module,exports){
-'use strict'
-
-var tester = require('../util/tester')
-var filter = require('./filter')
-
-module.exports = function filterNot (test) {
-  test = tester(test)
-  return filter(function (data) { return !test(data) })
-}
-
-},{"../util/tester":76,"./filter":66}],66:[function(require,module,exports){
-'use strict'
-
-var tester = require('../util/tester')
-
-module.exports = function filter (test) {
-  //regexp
-  test = tester(test)
-  return function (read) {
-    return function next (end, cb) {
-      var sync, loop = true
-      while(loop) {
-        loop = false
-        sync = true
-        read(end, function (end, data) {
-          if(!end && !test(data))
-            return sync ? loop = true : next(end, cb)
-          cb(end, data)
-        })
-        sync = false
-      }
-    }
-  }
-}
-
-
-},{"../util/tester":76}],67:[function(require,module,exports){
-'use strict'
-
-var values = require('../sources/values')
-var once = require('../sources/once')
-
-//convert a stream of arrays or streams into just a stream.
-module.exports = function flatten () {
-  return function (read) {
-    var _read
-    return function (abort, cb) {
-      if (abort) { //abort the current stream, and then stream of streams.
-        _read ? _read(abort, function(err) {
-          read(err || abort, cb)
-        }) : read(abort, cb)
-      }
-      else if(_read) nextChunk()
-      else nextStream()
-
-      function nextChunk () {
-        _read(null, function (err, data) {
-          if (err === true) nextStream()
-          else if (err) {
-            read(true, function(abortErr) {
-              // TODO: what do we do with the abortErr?
-              cb(err)
-            })
-          }
-          else cb(null, data)
-        })
-      }
-      function nextStream () {
-        _read = null
-        read(null, function (end, stream) {
-          if(end)
-            return cb(end)
-          if(Array.isArray(stream) || stream && 'object' === typeof stream)
-            stream = values(stream)
-          else if('function' != typeof stream)
-            stream = once(stream)
-          _read = stream
-          nextChunk()
-        })
-      }
-    }
-  }
-}
-
-
-},{"../sources/once":62,"../sources/values":63}],68:[function(require,module,exports){
-'use strict'
-
-module.exports = {
-  map: require('./map'),
-  asyncMap: require('./async-map'),
-  filter: require('./filter'),
-  filterNot: require('./filter-not'),
-  through: require('./through'),
-  take: require('./take'),
-  unique: require('./unique'),
-  nonUnique: require('./non-unique'),
-  flatten: require('./flatten')
-}
-
-
-
-
-},{"./async-map":64,"./filter":66,"./filter-not":65,"./flatten":67,"./map":69,"./non-unique":70,"./take":71,"./through":72,"./unique":73}],69:[function(require,module,exports){
-'use strict'
-
-function id (e) { return e }
-var prop = require('../util/prop')
-
-module.exports = function map (mapper) {
-  if(!mapper) return id
-  mapper = prop(mapper)
-  return function (read) {
-    return function (abort, cb) {
-      read(abort, function (end, data) {
-        try {
-        data = !end ? mapper(data) : null
-        } catch (err) {
-          return read(err, function () {
-            return cb(err)
-          })
-        }
-        cb(end, data)
-      })
-    }
-  }
-}
-
-},{"../util/prop":75}],70:[function(require,module,exports){
-'use strict'
-
-var unique = require('./unique')
-
-//passes an item through when you see it for the second time.
-module.exports = function nonUnique (field) {
-  return unique(field, true)
-}
-
-},{"./unique":73}],71:[function(require,module,exports){
-'use strict'
-
-//read a number of items and then stop.
-module.exports = function take (test, opts) {
-  opts = opts || {}
-  var last = opts.last || false // whether the first item for which !test(item) should still pass
-  var ended = false
-  if('number' === typeof test) {
-    last = true
-    var n = test; test = function () {
-      return --n
-    }
-  }
-
-  return function (read) {
-
-    function terminate (cb) {
-      read(true, function (err) {
-        last = false; cb(err || true)
-      })
-    }
-
-    return function (end, cb) {
-      if(ended)            last ? terminate(cb) : cb(ended)
-      else if(ended = end) read(ended, cb)
-      else
-        read(null, function (end, data) {
-          if(ended = ended || end) {
-            //last ? terminate(cb) :
-            cb(ended)
-          }
-          else if(!test(data)) {
-            ended = true
-            last ? cb(null, data) : terminate(cb)
-          }
-          else
-            cb(null, data)
-        })
-    }
-  }
-}
-
-},{}],72:[function(require,module,exports){
-'use strict'
-
-//a pass through stream that doesn't change the value.
-module.exports = function through (op, onEnd) {
-  var a = false
-
-  function once (abort) {
-    if(a || !onEnd) return
-    a = true
-    onEnd(abort === true ? null : abort)
-  }
-
-  return function (read) {
-    return function (end, cb) {
-      if(end) once(end)
-      return read(end, function (end, data) {
-        if(!end) op && op(data)
-        else once(end)
-        cb(end, data)
-      })
-    }
-  }
-}
-
-},{}],73:[function(require,module,exports){
-'use strict'
-
-function id (e) { return e }
-var prop = require('../util/prop')
-var filter = require('./filter')
-
-//drop items you have already seen.
-module.exports = function unique (field, invert) {
-  field = prop(field) || id
-  var seen = {}
-  return filter(function (data) {
-    var key = field(data)
-    if(seen[key]) return !!invert //false, by default
-    else seen[key] = true
-    return !invert //true by default
-  })
-}
-
-
-},{"../util/prop":75,"./filter":66}],74:[function(require,module,exports){
-module.exports = function abortCb(cb, abort, onAbort) {
-  cb(abort)
-  onAbort && onAbort(abort === true ? null: abort)
-  return
-}
-
-
-},{}],75:[function(require,module,exports){
-module.exports = function prop (key) {
-  return key && (
-    'string' == typeof key
-    ? function (data) { return data[key] }
-    : 'object' === typeof key && 'function' === typeof key.exec //regexp
-    ? function (data) { var v = key.exec(data); return v && v[0] }
-    : key
-  )
-}
-
-},{}],76:[function(require,module,exports){
-var prop = require('./prop')
-
-function id (e) { return e }
-
-module.exports = function tester (test) {
-  return (
-    'object' === typeof test && 'function' === typeof test.test //regexp
-    ? function (data) { return test.test(data) }
-    : prop (test) || id
-  )
-}
-
-},{"./prop":75}],77:[function(require,module,exports){
-var looper = require('looper')
-
-module.exports = function (writer, ender) {
-  return function (read) {
-    var queue = [], ended, error
-
-    function enqueue (data) {
-      queue.push(data)
-    }
-
-    writer = writer || function (data) {
-      this.queue(data)
-    }
-
-    ender = ender || function () {
-      this.queue(null)
-    }
-
-    var emitter = {
-      emit: function (event, data) {
-        if(event == 'data') enqueue(data)
-        if(event == 'end')  ended = true, enqueue(null)
-        if(event == 'error') error = data
-      },
-      queue: enqueue
-    }
-    var _cb
-    return function (end, cb) {
-      ended = ended || end
-      if(end)
-        return read(end, function () {
-          if(_cb) {
-            var t = _cb; _cb = null; t(end)
-          }
-          cb(end)
-        })
-
-      _cb = cb
-      looper(function pull (next) {
-        //if it's an error
-        if(!_cb) return
-        cb = _cb
-        if(error) _cb = null, cb(error)
-        else if(queue.length) {
-          var data = queue.shift()
-          _cb = null,cb(data === null, data)
-        }
-        else {
-          read(ended, function (end, data) {
-             //null has no special meaning for pull-stream
-            if(end && end !== true) {
-              error = end; return next()
-            }
-            if(ended = ended || end)  ender.call(emitter)
-            else if(data !== null) {
-              writer.call(emitter, data)
-              if(error || ended)
-                return read(error || ended, function () {
-                  _cb = null; cb(error || ended)
-                })
-            }
-            next(pull)
-          })
-        }
-      })
-    }
-  }
-}
-
-
-},{"looper":38}],78:[function(require,module,exports){
 'use strict';
 
-//load websocket library if we are not in the browser
-var WebSocket = require('./web-socket')
-var duplex = require('./duplex')
-var wsurl = require('./ws-url')
+var punycode = require('punycode');
+var util = require('./util');
 
-function isFunction (f) {
-  return 'function' === typeof f
+exports.parse = urlParse;
+exports.resolve = urlResolve;
+exports.resolveObject = urlResolveObject;
+exports.format = urlFormat;
+
+exports.Url = Url;
+
+function Url() {
+  this.protocol = null;
+  this.slashes = null;
+  this.auth = null;
+  this.host = null;
+  this.port = null;
+  this.hostname = null;
+  this.hash = null;
+  this.search = null;
+  this.query = null;
+  this.pathname = null;
+  this.path = null;
+  this.href = null;
 }
 
-module.exports = function (addr, opts) {
-  var stream
-  if(isFunction(opts)) opts = {onConnect: opts}
+// Reference: RFC 3986, RFC 1808, RFC 2396
 
-  var location = typeof window === 'undefined' ? {} : window.location
+// define these here so at least they only have to be
+// compiled once on the first module load.
+var protocolPattern = /^([a-z0-9.+-]+:)/i,
+    portPattern = /:[0-9]*$/,
 
-  var url = wsurl(addr, location)
-  var socket = new WebSocket(url)
-  stream = duplex(socket, opts)
-  stream.remoteAddress = url
+    // Special case for a simple path URL
+    simplePathPattern = /^(\/\/?(?!\/)[^\?\s]*)(\?[^\s]*)?$/,
 
-  stream.close = function (cb) {
-    if (cb && typeof cb == 'function')
-      socket.addEventListener('close', cb)
-    socket.close()
-  }
+    // RFC 2396: characters reserved for delimiting URLs.
+    // We actually just auto-escape these.
+    delims = ['<', '>', '"', '`', ' ', '\r', '\n', '\t'],
 
-  return stream
+    // RFC 2396: characters not allowed for various reasons.
+    unwise = ['{', '}', '|', '\\', '^', '`'].concat(delims),
+
+    // Allowed by RFCs, but cause of XSS attacks.  Always escape these.
+    autoEscape = ['\''].concat(unwise),
+    // Characters that are never ever allowed in a hostname.
+    // Note that any invalid chars are also handled, but these
+    // are the ones that are *expected* to be seen, so we fast-path
+    // them.
+    nonHostChars = ['%', '/', '?', ';', '#'].concat(autoEscape),
+    hostEndingChars = ['/', '?', '#'],
+    hostnameMaxLen = 255,
+    hostnamePartPattern = /^[+a-z0-9A-Z_-]{0,63}$/,
+    hostnamePartStart = /^([+a-z0-9A-Z_-]{0,63})(.*)$/,
+    // protocols that can allow "unsafe" and "unwise" chars.
+    unsafeProtocol = {
+      'javascript': true,
+      'javascript:': true
+    },
+    // protocols that never have a hostname.
+    hostlessProtocol = {
+      'javascript': true,
+      'javascript:': true
+    },
+    // protocols that always contain a // bit.
+    slashedProtocol = {
+      'http': true,
+      'https': true,
+      'ftp': true,
+      'gopher': true,
+      'file': true,
+      'http:': true,
+      'https:': true,
+      'ftp:': true,
+      'gopher:': true,
+      'file:': true
+    },
+    querystring = require('querystring');
+
+function urlParse(url, parseQueryString, slashesDenoteHost) {
+  if (url && util.isObject(url) && url instanceof Url) return url;
+
+  var u = new Url;
+  u.parse(url, parseQueryString, slashesDenoteHost);
+  return u;
 }
 
-module.exports.connect = module.exports
-
-},{"./duplex":79,"./web-socket":84,"./ws-url":85}],79:[function(require,module,exports){
-var source = require('./source')
-var sink = require('./sink')
-
-module.exports = duplex
-
-function duplex (ws, opts) {
-  var req = ws.upgradeReq || {}
-  if(opts && opts.binaryType)
-    ws.binaryType = opts.binaryType
-  else if(opts && opts.binary)
-    ws.binaryType = 'arraybuffer'
-  return {
-    source: source(ws, opts && opts.onConnect),
-    sink: sink(ws, opts),
-
-    //http properties - useful for routing or auth.
-    headers: req.headers,
-    url: req.url,
-    upgrade: req.upgrade,
-    method: req.method
-  };
-};
-
-
-},{"./sink":82,"./source":83}],80:[function(require,module,exports){
-
-//normalize a ws url.
-var URL = require('url')
-module.exports = function (url, location, protocolMap, defaultProtocol) {
-  protocolMap = protocolMap ||{}
-  /*
-
-  https://nodejs.org/dist/latest-v6.x/docs/api/url.html#url_url_parse_urlstr_parsequerystring_slashesdenotehost
-
-  I didn't know this, but url.parse takes a 3rd
-  argument which interprets "//foo.com" as the hostname,
-  but without the protocol. by default, // is interpreted
-  as the path.
-
-  that lets us do what the wsurl module does.
-  https://www.npmjs.com/package/wsurl
-
-  but most of the time, I want to write js
-  that will work on localhost, and will work
-  on a server...
-
-  so I want to just do createWebSocket('/')
-  and get "ws://mydomain.com/"
-
-  */
-
-  var url = URL.parse(url, false, true)
-
-  var proto
-  if(url.protocol) proto = url.protocol
-  else {
-    proto = location.protocol ? location.protocol.replace(/:$/,'') : 'http'
-    proto = ((protocolMap)[proto] || defaultProtocol || proto) + ':'
+Url.prototype.parse = function(url, parseQueryString, slashesDenoteHost) {
+  if (!util.isString(url)) {
+    throw new TypeError("Parameter 'url' must be a string, not " + typeof url);
   }
 
-  //handle quirk in url package
-  if(url.host && url.host[0] === ':')
-    url.host = null
+  // Copy chrome, IE, opera backslash-handling behavior.
+  // Back slashes before the query string get converted to forward slashes
+  // See: https://code.google.com/p/chromium/issues/detail?id=25916
+  var queryIndex = url.indexOf('?'),
+      splitter =
+          (queryIndex !== -1 && queryIndex < url.indexOf('#')) ? '?' : '#',
+      uSplit = url.split(splitter),
+      slashRegex = /\\/g;
+  uSplit[0] = uSplit[0].replace(slashRegex, '/');
+  url = uSplit.join(splitter);
 
-  //useful for websockets
-  if(url.hostname) {
-    return URL.format({
-      protocol: proto,
-      slashes: true,
-      hostname: url.hostname,
-      port: url.port,
-      pathname: url.pathname,
-      search: url.search
-    })
-  }
-  else url.host = location.host
+  var rest = url;
 
-  //included for completeness. would you want to do this?
-  if(url.port) {
-    return URL.format({
-      protocol: proto,
-      slashes: true,
-      host: location.hostname + ':' + url.port,
-      port: url.port,
-      pathname: url.pathname,
-      search: url.search
-    })
-  }
+  // trim before proceeding.
+  // This is to support parse stuff like "  http://foo.com  \n"
+  rest = rest.trim();
 
-  //definately useful for websockets
-  if(url.pathname) {
-    return URL.format({
-      protocol: proto,
-      slashes: true,
-      host: url.host,
-      pathname: url.pathname,
-      search: url.search
-    })
-  }
-  else
-    url.pathname = location.pathname
-
-  //included for completeness. would you want to do this?
-  if(url.search) {
-    return URL.format({
-      protocol: proto,
-      slashes: true,
-      host: url.host,
-      pathname: url.pathname,
-      search: url.search
-    })
-  }
-  else url.search = location.search
-
-  return url.format(url)
-}
-
-
-
-
-
-
-},{"url":19}],81:[function(require,module,exports){
-module.exports = function(socket, callback) {
-  var remove = socket && (socket.removeEventListener || socket.removeListener);
-
-  function cleanup () {
-    if (typeof remove == 'function') {
-      remove.call(socket, 'open', handleOpen);
-      remove.call(socket, 'error', handleErr);
-    }
-  }
-
-  function handleOpen(evt) {
-    cleanup(); callback();
-  }
-
-  function handleErr (evt) {
-    cleanup(); callback(evt);
-  }
-
-  // if the socket is closing or closed, return end
-  if (socket.readyState >= 2) {
-    return callback(true);
-  }
-
-  // if open, trigger the callback
-  if (socket.readyState === 1) {
-    return callback();
-  }
-
-  socket.addEventListener('open', handleOpen);
-  socket.addEventListener('error', handleErr);
-};
-
-},{}],82:[function(require,module,exports){
-(function (process){
-var ready = require('./ready');
-
-/**
-  ### `sink(socket, opts?)`
-
-  Create a pull-stream `Sink` that will write data to the `socket`.
-
-  <<< examples/write.js
-
-**/
-module.exports = function(socket, opts) {
-  return function (read) {
-    opts = opts || {}
-    var closeOnEnd = opts.closeOnEnd !== false;
-    var onClose = 'function' === typeof opts ? opts : opts.onClose;
-
-    function next(end, data) {
-      // if the stream has ended, simply return
-      if (end) {
-        if (closeOnEnd && socket.readyState <= 1) {
-          if(onClose)
-            socket.addEventListener('close', function (ev) {
-              if(ev.wasClean || ev.code === 1006) onClose()
-              else {
-                console.log(ev)
-                var err = new Error('ws error')
-                err.event = ev
-                onClose(err)
-              }
-            });
-
-          socket.close()
+  if (!slashesDenoteHost && url.split('#').length === 1) {
+    // Try fast path regexp
+    var simplePath = simplePathPattern.exec(rest);
+    if (simplePath) {
+      this.path = rest;
+      this.href = rest;
+      this.pathname = simplePath[1];
+      if (simplePath[2]) {
+        this.search = simplePath[2];
+        if (parseQueryString) {
+          this.query = querystring.parse(this.search.substr(1));
+        } else {
+          this.query = this.search.substr(1);
         }
-
-        return;
+      } else if (parseQueryString) {
+        this.search = '';
+        this.query = {};
       }
-
-      // socket ready?
-      ready(socket, function(end) {
-        if (end) {
-          return read(end, function () {});
-        }
-
-        socket.send(data);
-        process.nextTick(function() {
-          read(null, next);
-        });
-      });
+      return this;
     }
-
-    read(null, next);
   }
-}
 
+  var proto = protocolPattern.exec(rest);
+  if (proto) {
+    proto = proto[0];
+    var lowerProto = proto.toLowerCase();
+    this.protocol = lowerProto;
+    rest = rest.substr(proto.length);
+  }
 
+  // figure out if it's got a host
+  // user@server is *always* interpreted as a hostname, and url
+  // resolution will treat //foo/bar as host=foo,path=bar because that's
+  // how the browser resolves relative URLs.
+  if (slashesDenoteHost || proto || rest.match(/^\/\/[^@\/]+@[^@\/]+/)) {
+    var slashes = rest.substr(0, 2) === '//';
+    if (slashes && !(proto && hostlessProtocol[proto])) {
+      rest = rest.substr(2);
+      this.slashes = true;
+    }
+  }
 
+  if (!hostlessProtocol[proto] &&
+      (slashes || (proto && !slashedProtocol[proto]))) {
 
-}).call(this,require('_process'))
-},{"./ready":81,"_process":14}],83:[function(require,module,exports){
-/**
-  ### `source(socket)`
+    // there's a hostname.
+    // the first instance of /, ?, ;, or # ends the host.
+    //
+    // If there is an @ in the hostname, then non-host chars *are* allowed
+    // to the left of the last @ sign, unless some host-ending character
+    // comes *before* the @-sign.
+    // URLs are obnoxious.
+    //
+    // ex:
+    // http://a@b@c/ => user:a@b host:c
+    // http://a@b?@c => user:a host:c path:/?@c
 
-  Create a pull-stream `Source` that will read data from the `socket`.
+    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
+    // Review our test case against browsers more comprehensively.
 
-  <<< examples/read.js
-
-**/
-
-module.exports = function(socket, cb) {
-  var buffer = [];
-  var receiver;
-  var ended;
-  var started = false;
-  socket.addEventListener('message', function(evt) {
-    if (receiver) {
-      return receiver(null, evt.data);
+    // find the first instance of any hostEndingChars
+    var hostEnd = -1;
+    for (var i = 0; i < hostEndingChars.length; i++) {
+      var hec = rest.indexOf(hostEndingChars[i]);
+      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
+        hostEnd = hec;
     }
 
-    buffer.push(evt.data);
-  });
-
-  socket.addEventListener('close', function(evt) {
-    if (ended) return
-    if (receiver) {
-      receiver(ended = true)
-    }
-  });
-
-  socket.addEventListener('error', function (evt) {
-    if (ended) return;
-    ended = evt;
-    if(!started) {
-      started = true
-      cb && cb(evt)
-    }
-    if (receiver) {
-      receiver(ended)
-    }
-  });
-
-  socket.addEventListener('open', function (evt) {
-    if(started || ended) return
-    started = true
-    cb && cb()
-  })
-
-  function read(abort, cb) {
-    receiver = null;
-
-    //if stream has already ended.
-    if (ended)
-      return cb(ended);
-
-    // if ended, abort
-    else if (abort) {
-      //this will callback when socket closes
-      receiver = cb
-      socket.close()
+    // at this point, either we have an explicit point where the
+    // auth portion cannot go past, or the last @ char is the decider.
+    var auth, atSign;
+    if (hostEnd === -1) {
+      // atSign can be anywhere.
+      atSign = rest.lastIndexOf('@');
+    } else {
+      // atSign must be in auth portion.
+      // http://a@b/c@d => host:b auth:a path:/c@d
+      atSign = rest.lastIndexOf('@', hostEnd);
     }
 
-    // return data, if any
-    else if(buffer.length > 0)
-      cb(null, buffer.shift());
+    // Now we have a portion which is definitely the auth.
+    // Pull that off.
+    if (atSign !== -1) {
+      auth = rest.slice(0, atSign);
+      rest = rest.slice(atSign + 1);
+      this.auth = decodeURIComponent(auth);
+    }
 
-    // wait for more data (or end)
-    else
-      receiver = cb;
+    // the host is the remaining to the left of the first non-host char
+    hostEnd = -1;
+    for (var i = 0; i < nonHostChars.length; i++) {
+      var hec = rest.indexOf(nonHostChars[i]);
+      if (hec !== -1 && (hostEnd === -1 || hec < hostEnd))
+        hostEnd = hec;
+    }
+    // if we still have not hit it, then the entire thing is a host.
+    if (hostEnd === -1)
+      hostEnd = rest.length;
 
-  };
+    this.host = rest.slice(0, hostEnd);
+    rest = rest.slice(hostEnd);
 
-  return read;
+    // pull out port.
+    this.parseHost();
+
+    // we've indicated that there is a hostname,
+    // so even if it's empty, it has to be present.
+    this.hostname = this.hostname || '';
+
+    // if hostname begins with [ and ends with ]
+    // assume that it's an IPv6 address.
+    var ipv6Hostname = this.hostname[0] === '[' &&
+        this.hostname[this.hostname.length - 1] === ']';
+
+    // validate a little.
+    if (!ipv6Hostname) {
+      var hostparts = this.hostname.split(/\./);
+      for (var i = 0, l = hostparts.length; i < l; i++) {
+        var part = hostparts[i];
+        if (!part) continue;
+        if (!part.match(hostnamePartPattern)) {
+          var newpart = '';
+          for (var j = 0, k = part.length; j < k; j++) {
+            if (part.charCodeAt(j) > 127) {
+              // we replace non-ASCII char with a temporary placeholder
+              // we need this to make sure size of hostname is not
+              // broken by replacing non-ASCII by nothing
+              newpart += 'x';
+            } else {
+              newpart += part[j];
+            }
+          }
+          // we test again with ASCII char only
+          if (!newpart.match(hostnamePartPattern)) {
+            var validParts = hostparts.slice(0, i);
+            var notHost = hostparts.slice(i + 1);
+            var bit = part.match(hostnamePartStart);
+            if (bit) {
+              validParts.push(bit[1]);
+              notHost.unshift(bit[2]);
+            }
+            if (notHost.length) {
+              rest = '/' + notHost.join('.') + rest;
+            }
+            this.hostname = validParts.join('.');
+            break;
+          }
+        }
+      }
+    }
+
+    if (this.hostname.length > hostnameMaxLen) {
+      this.hostname = '';
+    } else {
+      // hostnames are always lower case.
+      this.hostname = this.hostname.toLowerCase();
+    }
+
+    if (!ipv6Hostname) {
+      // IDNA Support: Returns a punycoded representation of "domain".
+      // It only converts parts of the domain name that
+      // have non-ASCII characters, i.e. it doesn't matter if
+      // you call it with a domain that already is ASCII-only.
+      this.hostname = punycode.toASCII(this.hostname);
+    }
+
+    var p = this.port ? ':' + this.port : '';
+    var h = this.hostname || '';
+    this.host = h + p;
+    this.href += this.host;
+
+    // strip [ and ] from the hostname
+    // the host field still retains them, though
+    if (ipv6Hostname) {
+      this.hostname = this.hostname.substr(1, this.hostname.length - 2);
+      if (rest[0] !== '/') {
+        rest = '/' + rest;
+      }
+    }
+  }
+
+  // now rest is set to the post-host stuff.
+  // chop off any delim chars.
+  if (!unsafeProtocol[lowerProto]) {
+
+    // First, make 100% sure that any "autoEscape" chars get
+    // escaped, even if encodeURIComponent doesn't think they
+    // need to be.
+    for (var i = 0, l = autoEscape.length; i < l; i++) {
+      var ae = autoEscape[i];
+      if (rest.indexOf(ae) === -1)
+        continue;
+      var esc = encodeURIComponent(ae);
+      if (esc === ae) {
+        esc = escape(ae);
+      }
+      rest = rest.split(ae).join(esc);
+    }
+  }
+
+
+  // chop off from the tail first.
+  var hash = rest.indexOf('#');
+  if (hash !== -1) {
+    // got a fragment string.
+    this.hash = rest.substr(hash);
+    rest = rest.slice(0, hash);
+  }
+  var qm = rest.indexOf('?');
+  if (qm !== -1) {
+    this.search = rest.substr(qm);
+    this.query = rest.substr(qm + 1);
+    if (parseQueryString) {
+      this.query = querystring.parse(this.query);
+    }
+    rest = rest.slice(0, qm);
+  } else if (parseQueryString) {
+    // no query string, but parseQueryString still requested
+    this.search = '';
+    this.query = {};
+  }
+  if (rest) this.pathname = rest;
+  if (slashedProtocol[lowerProto] &&
+      this.hostname && !this.pathname) {
+    this.pathname = '/';
+  }
+
+  //to support http.request
+  if (this.pathname || this.search) {
+    var p = this.pathname || '';
+    var s = this.search || '';
+    this.path = p + s;
+  }
+
+  // finally, reconstruct the href based on what has been validated.
+  this.href = this.format();
+  return this;
 };
 
-
-
-
-
-},{}],84:[function(require,module,exports){
-
-module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
-
-},{"ws":6}],85:[function(require,module,exports){
-var rurl = require('relative-url')
-var map = {http:'ws', https:'wss'}
-var def = 'ws'
-module.exports = function (url, location) {
-  return rurl(url, location, map, def)
+// format a parsed object into a url string
+function urlFormat(obj) {
+  // ensure it's an object, and not a string url.
+  // If it's an obj, this is a no-op.
+  // this way, you can call url_format() on strings
+  // to clean up potentially wonky urls.
+  if (util.isString(obj)) obj = urlParse(obj);
+  if (!(obj instanceof Url)) return Url.prototype.format.call(obj);
+  return obj.format();
 }
 
+Url.prototype.format = function() {
+  var auth = this.auth || '';
+  if (auth) {
+    auth = encodeURIComponent(auth);
+    auth = auth.replace(/%3A/i, ':');
+    auth += '@';
+  }
 
+  var protocol = this.protocol || '',
+      pathname = this.pathname || '',
+      hash = this.hash || '',
+      host = false,
+      query = '';
 
-},{"relative-url":80}],86:[function(require,module,exports){
-var pull = require('pull-stream')
+  if (this.host) {
+    host = auth + this.host;
+  } else if (this.hostname) {
+    host = auth + (this.hostname.indexOf(':') === -1 ?
+        this.hostname :
+        '[' + this.hostname + ']');
+    if (this.port) {
+      host += ':' + this.port;
+    }
+  }
 
-var Handshake = require('pull-handshake')
-var State = require('./state')
+  if (this.query &&
+      util.isObject(this.query) &&
+      Object.keys(this.query).length) {
+    query = querystring.stringify(this.query);
+  }
 
-var challenge_length = 64
-var client_auth_length = 16+32+64
-var server_auth_length = 16+64
-var mac_length = 16
+  var search = this.search || (query && ('?' + query)) || '';
 
-//client is Alice
-//create the client stream with the public key you expect to connect to.
-exports.client =
-exports.createClientStream = function (alice, app_key, timeout) {
+  if (protocol && protocol.substr(-1) !== ':') protocol += ':';
 
-  return function (bob_pub, seed, cb) {
-    if('function' == typeof seed)
-      cb = seed, seed = null
+  // only the slashedProtocols get the //.  Not mailto:, xmpp:, etc.
+  // unless they had them to begin with.
+  if (this.slashes ||
+      (!protocol || slashedProtocol[protocol]) && host !== false) {
+    host = '//' + (host || '');
+    if (pathname && pathname.charAt(0) !== '/') pathname = '/' + pathname;
+  } else if (!host) {
+    host = '';
+  }
 
-    //alice may be null.
-    var state = new State(app_key, alice, bob_pub, seed)
+  if (hash && hash.charAt(0) !== '#') hash = '#' + hash;
+  if (search && search.charAt(0) !== '?') search = '?' + search;
 
-    var stream = Handshake({timeout: timeout}, cb)
-    var shake = stream.handshake
-    delete stream.handshake
+  pathname = pathname.replace(/[?#]/g, function(match) {
+    return encodeURIComponent(match);
+  });
+  search = search.replace('#', '%23');
 
-    function abort(err, reason) {
-      if(err && err !== true) shake.abort(err, cb)
-      else                    shake.abort(new Error(reason), cb)
+  return protocol + host + pathname + search + hash;
+};
+
+function urlResolve(source, relative) {
+  return urlParse(source, false, true).resolve(relative);
+}
+
+Url.prototype.resolve = function(relative) {
+  return this.resolveObject(urlParse(relative, false, true)).format();
+};
+
+function urlResolveObject(source, relative) {
+  if (!source) return relative;
+  return urlParse(source, false, true).resolveObject(relative);
+}
+
+Url.prototype.resolveObject = function(relative) {
+  if (util.isString(relative)) {
+    var rel = new Url();
+    rel.parse(relative, false, true);
+    relative = rel;
+  }
+
+  var result = new Url();
+  var tkeys = Object.keys(this);
+  for (var tk = 0; tk < tkeys.length; tk++) {
+    var tkey = tkeys[tk];
+    result[tkey] = this[tkey];
+  }
+
+  // hash is always overridden, no matter what.
+  // even href="" will remove it.
+  result.hash = relative.hash;
+
+  // if the relative url is empty, then there's nothing left to do here.
+  if (relative.href === '') {
+    result.href = result.format();
+    return result;
+  }
+
+  // hrefs like //foo/bar always cut to the protocol.
+  if (relative.slashes && !relative.protocol) {
+    // take everything except the protocol from relative
+    var rkeys = Object.keys(relative);
+    for (var rk = 0; rk < rkeys.length; rk++) {
+      var rkey = rkeys[rk];
+      if (rkey !== 'protocol')
+        result[rkey] = relative[rkey];
     }
 
-    shake.write(state.createChallenge())
-
-    shake.read(challenge_length, function (err, msg) {
-      if(err) return abort(err, 'challenge not accepted')
-      //create the challenge first, because we need to generate a local key
-      if(!state.verifyChallenge(msg))
-        return abort(null, 'wrong protocol (version?)')
-
-      shake.write(state.createClientAuth())
-
-      shake.read(server_auth_length, function (err, boxed_sig) {
-        if(err) return abort(err, 'hello not accepted')
-
-        if(!state.verifyServerAccept(boxed_sig))
-          return abort(null, 'server not authenticated')
-
-        cb(null, shake.rest(), state.cleanSecrets())
-      })
-    })
-
-    return stream
-  }
-}
-
-//server is Bob.
-exports.server =
-exports.createServerStream = function (bob, authorize, app_key, timeout) {
-
-  return function (cb) {
-    var state = new State(app_key, bob)
-    var stream = Handshake({timeout: timeout}, cb)
-
-    var shake = stream.handshake
-    delete stream.handshake
-
-    function abort (err, reason) {
-      if(err && err !== true) shake.abort(err, cb)
-      else                    shake.abort(new Error(reason), cb)
+    //urlParse appends trailing / to urls like http://www.example.com
+    if (slashedProtocol[result.protocol] &&
+        result.hostname && !result.pathname) {
+      result.path = result.pathname = '/';
     }
 
-    shake.read(challenge_length, function (err, challenge) {
-      if(err) return abort(err, 'expected challenge')
-      if(!state.verifyChallenge(challenge))
-        return shake.abort(new Error('wrong protocol/version'))
-
-      shake.write(state.createChallenge())
-      shake.read(client_auth_length, function (err, hello) {
-        if(err) return abort(err, 'expected hello')
-        if(!state.verifyClientAuth(hello)) {
-          //we know who the client was, but chose not to answer:
-          if(state.remote.public)
-            return abort(null, 'unauthenticated client:' + state.remote.public.toString('hex'), cb)
-          //client dialed wrong number... (we don't know who they where)
-          else
-            return abort(null, 'wrong number')
-        }
-        //check if the user wants to speak to alice.
-        authorize(state.remote.public, function (err, auth) {
-          if(auth == null && !err) err = new Error('client unauthorized')
-          if(!auth) return abort(err, 'client authentication rejected')
-          state.auth = auth
-          shake.write(state.createServerAccept())
-          cb(null, shake.rest(), state.cleanSecrets())
-        })
-      })
-    })
-    return stream
-  }
-}
-
-
-
-
-},{"./state":89,"pull-handshake":41,"pull-stream":46}],87:[function(require,module,exports){
-(function (Buffer){
-var handshake = require('./handshake')
-var secure = require('./secure')
-var cl = require('chloride')
-
-function isBuffer(buf, len) {
-  return Buffer.isBuffer(buf) && buf.length === len
-}
-
-exports.client =
-exports.createClient = function (alice, app_key, timeout) {
-  var create = handshake.client(alice, app_key, timeout)
-
-  return function (bob, seed, cb) {
-    if(!isBuffer(bob, 32))
-      throw new Error('createClient *must* be passed a public key')
-    if('function' === typeof seed)
-      return create(bob, secure(seed))
-    else
-      return create(bob, seed, secure(cb))
+    result.href = result.format();
+    return result;
   }
 
-}
-exports.server =
-exports.createServer = function (bob, authorize, app_key, timeout) {
-  var create = handshake.server(bob, authorize, app_key, timeout)
+  if (relative.protocol && relative.protocol !== result.protocol) {
+    // if it's a known url protocol, then changing
+    // the protocol does weird things
+    // first, if it's not file:, then we MUST have a host,
+    // and if there was a path
+    // to begin with, then we MUST have a path.
+    // if it is file:, then the host is dropped,
+    // because that's known to be hostless.
+    // anything else is assumed to be absolute.
+    if (!slashedProtocol[relative.protocol]) {
+      var keys = Object.keys(relative);
+      for (var v = 0; v < keys.length; v++) {
+        var k = keys[v];
+        result[k] = relative[k];
+      }
+      result.href = result.format();
+      return result;
+    }
 
-  return function (cb) {
-    return create(secure(cb))
+    result.protocol = relative.protocol;
+    if (!relative.host && !hostlessProtocol[relative.protocol]) {
+      var relPath = (relative.pathname || '').split('/');
+      while (relPath.length && !(relative.host = relPath.shift()));
+      if (!relative.host) relative.host = '';
+      if (!relative.hostname) relative.hostname = '';
+      if (relPath[0] !== '') relPath.unshift('');
+      if (relPath.length < 2) relPath.unshift('');
+      result.pathname = relPath.join('/');
+    } else {
+      result.pathname = relative.pathname;
+    }
+    result.search = relative.search;
+    result.query = relative.query;
+    result.host = relative.host || '';
+    result.auth = relative.auth;
+    result.hostname = relative.hostname || relative.host;
+    result.port = relative.port;
+    // to support http.request
+    if (result.pathname || result.search) {
+      var p = result.pathname || '';
+      var s = result.search || '';
+      result.path = p + s;
+    }
+    result.slashes = result.slashes || relative.slashes;
+    result.href = result.format();
+    return result;
   }
 
-}
-
-
-
-
-}).call(this,{"isBuffer":require("../browserify/node_modules/insert-module-globals/node_modules/is-buffer/index.js")})
-},{"../browserify/node_modules/insert-module-globals/node_modules/is-buffer/index.js":12,"./handshake":86,"./secure":88,"chloride":23}],88:[function(require,module,exports){
-(function (Buffer){
-var sodium = require('chloride')
-var hash = sodium.crypto_hash_sha256
-var pull = require('pull-stream')
-var boxes = require('pull-box-stream')
-
-var concat = Buffer.concat
-
-module.exports = function (cb) {
-
-  return function (err, stream, state) {
-    if(err) return cb(err)
-
-    var en_key = hash(concat([state.secret, state.remote.public]))
-    var de_key = hash(concat([state.secret, state.local.public]))
-
-    var en_nonce = state.remote.app_mac.slice(0, 24)
-    var de_nonce = state.local.app_mac.slice(0, 24)
-
-    cb(null, {
-      remote: state.remote.public,
-      //on the server, attach any metadata gathered
-      //during `authorize` call
-      auth: state.auth,
-      source: pull(
-        stream.source,
-        boxes.createUnboxStream(de_key, de_nonce)
+  var isSourceAbs = (result.pathname && result.pathname.charAt(0) === '/'),
+      isRelAbs = (
+          relative.host ||
+          relative.pathname && relative.pathname.charAt(0) === '/'
       ),
-      sink: pull(
-        boxes.createBoxStream(en_key, en_nonce),
-        stream.sink
-      )
-    })
+      mustEndAbs = (isRelAbs || isSourceAbs ||
+                    (result.host && relative.pathname)),
+      removeAllDots = mustEndAbs,
+      srcPath = result.pathname && result.pathname.split('/') || [],
+      relPath = relative.pathname && relative.pathname.split('/') || [],
+      psychotic = result.protocol && !slashedProtocol[result.protocol];
+
+  // if the url is a non-slashed url, then relative
+  // links like ../.. should be able
+  // to crawl up to the hostname, as well.  This is strange.
+  // result.protocol has already been set by now.
+  // Later on, put the first path part into the host field.
+  if (psychotic) {
+    result.hostname = '';
+    result.port = null;
+    if (result.host) {
+      if (srcPath[0] === '') srcPath[0] = result.host;
+      else srcPath.unshift(result.host);
+    }
+    result.host = '';
+    if (relative.protocol) {
+      relative.hostname = null;
+      relative.port = null;
+      if (relative.host) {
+        if (relPath[0] === '') relPath[0] = relative.host;
+        else relPath.unshift(relative.host);
+      }
+      relative.host = null;
+    }
+    mustEndAbs = mustEndAbs && (relPath[0] === '' || srcPath[0] === '');
   }
 
-}
-
-
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":8,"chloride":23,"pull-box-stream":39,"pull-stream":46}],89:[function(require,module,exports){
-(function (Buffer){
-
-var sodium      = require('chloride')
-
-var keypair     = sodium.crypto_box_keypair
-var from_seed   = sodium.crypto_sign_seed_keypair
-var shared      = sodium.crypto_scalarmult
-var hash        = sodium.crypto_hash_sha256
-var sign        = sodium.crypto_sign_detached
-var verify      = sodium.crypto_sign_verify_detached
-var auth        = sodium.crypto_auth
-var verify_auth = sodium.crypto_auth_verify
-var curvify_pk  = sodium.crypto_sign_ed25519_pk_to_curve25519
-var curvify_sk  = sodium.crypto_sign_ed25519_sk_to_curve25519
-var box         = sodium.crypto_secretbox_easy
-var unbox       = sodium.crypto_secretbox_open_easy
-
-var concat = Buffer.concat
-
-var nonce = new Buffer(24); nonce.fill(0)
-
-var challenge_length = 64
-var client_auth_length = 16+32+64
-var server_auth_length = 16+64
-var mac_length = 16
-
-//this is a simple secure handshake,
-//the client public key is passed in plain text,
-
-module.exports = State
-
-function State (app_key, local, remote, seed) {
-
-  if(!(this instanceof State)) return new State(app_key, local, remote, seed)
-
-  if(seed) local = from_seed(seed)
-
-  this.app_key = app_key
-  var kx = keypair()
-  this.local = {
-    kx_pk: kx.publicKey,
-    kx_sk: kx.secretKey,
-    public: local.publicKey,
-    secret: local.secretKey
-  }
-  this.remote = {
-    public: remote || null
+  if (isRelAbs) {
+    // it's absolute.
+    result.host = (relative.host || relative.host === '') ?
+                  relative.host : result.host;
+    result.hostname = (relative.hostname || relative.hostname === '') ?
+                      relative.hostname : result.hostname;
+    result.search = relative.search;
+    result.query = relative.query;
+    srcPath = relPath;
+    // fall through to the dot-handling below.
+  } else if (relPath.length) {
+    // it's relative
+    // throw away the existing file, and take the new path instead.
+    if (!srcPath) srcPath = [];
+    srcPath.pop();
+    srcPath = srcPath.concat(relPath);
+    result.search = relative.search;
+    result.query = relative.query;
+  } else if (!util.isNullOrUndefined(relative.search)) {
+    // just pull out the search.
+    // like href='?foo'.
+    // Put this after the other two cases because it simplifies the booleans
+    if (psychotic) {
+      result.hostname = result.host = srcPath.shift();
+      //occationaly the auth can get stuck only in host
+      //this especially happens in cases like
+      //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
+      var authInHost = result.host && result.host.indexOf('@') > 0 ?
+                       result.host.split('@') : false;
+      if (authInHost) {
+        result.auth = authInHost.shift();
+        result.host = result.hostname = authInHost.shift();
+      }
+    }
+    result.search = relative.search;
+    result.query = relative.query;
+    //to support http.request
+    if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
+      result.path = (result.pathname ? result.pathname : '') +
+                    (result.search ? result.search : '');
+    }
+    result.href = result.format();
+    return result;
   }
 
-}
-
-var proto = State.prototype
-
-proto.createChallenge =
-function createChallenge () {
-  var state = this
-
-  state.local.app_mac = auth(state.local.kx_pk, state.app_key)
-  return concat([state.local.app_mac, state.local.kx_pk])
-}
-
-proto.verifyChallenge =
-function verifyChallenge (challenge) {
-  var state = this
-
-  var mac = challenge.slice(0, 32)
-  var remote_pk = challenge.slice(32, challenge.length)
-  if(0 !== verify_auth(mac, remote_pk, state.app_key))
-    return null
-
-  state.remote.kx_pk = remote_pk
-  state.remote.app_mac = mac
-  state.secret = shared(state.local.kx_sk, state.remote.kx_pk)
-  state.shash = hash(state.secret)
-
-  return true
-}
-
-
-proto.createClientAuth =
-function createClientAuth () {
-  var state = this
-  //now we have agreed on the secret.
-  //this can be an encryption secret,
-  //or a hmac secret.
-
-  // shared(local.kx, remote.public)
-  var a_bob = shared(state.local.kx_sk, curvify_pk(state.remote.public))
-  state.a_bob = a_bob
-  state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
-
-  var signed = concat([state.app_key, state.remote.public, state.shash])
-  var sig = sign(signed, state.local.secret)
-
-  state.local.hello = Buffer.concat([sig, state.local.public])
-  return box(state.local.hello, nonce, state.secret2)
-}
-
-proto.verifyClientAuth =
-function verifyClientAuth (data) {
-  var state = this
-
-  var a_bob = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
-  state.a_bob = a_bob
-  state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
-
-  state.remote.hello = unbox(data, nonce, state.secret2)
-  if(!state.remote.hello)
-    return null
-
-  var sig = state.remote.hello.slice(0, 64)
-  var public = state.remote.hello.slice(64, client_auth_length)
-
-  var signed = concat([state.app_key, state.local.public, state.shash])
-  if(!verify(sig, signed, public))
-    return null
-
-  state.remote.public = public
-
-  return true
-}
-
-proto.createServerAccept =
-function createServerAccept () {
-  var state = this
-
-  //shared key between my local ephemeral key + remote public
-  var b_alice = shared(state.local.kx_sk, curvify_pk(state.remote.public))
-  state.b_alice = b_alice
-  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
-
-  var signed = concat([state.app_key, state.remote.hello, state.shash])
-  var okay = sign(signed, state.local.secret)
-  return box(okay, nonce, state.secret3)
-}
-
-proto.verifyServerAccept =
-function verifyServerAccept (boxed_okay) {
-  var state = this
-
-  var b_alice = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
-  state.b_alice = b_alice
-//  state.secret3 = hash(concat([state.secret2, b_alice]))
-  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
-
-  var sig = unbox(boxed_okay, nonce, state.secret3)
-  if(!sig) return null
-  var signed = concat([state.app_key, state.local.hello, state.shash])
-  if(!verify(sig, signed, state.remote.public))
-      return null
-  return true
-}
-
-proto.cleanSecrets =
-function cleanSecrets () {
-  var state = this
-
-  // clean away all the secrets for forward security.
-  // use a different secret hash(secret3) in the rest of the session,
-  // and so that a sloppy application cannot compromise the handshake.
-
-  delete state.local.secret
-  state.shash.fill(0)
-  state.secret.fill(0)
-  state.a_bob.fill(0)
-  state.b_alice.fill(0)
-  state.secret = hash(state.secret3)
-  state.secret2.fill(0)
-  state.secret3.fill(0)
-  state.local.kx_sk.fill(0)
-
-  delete state.shash
-  delete state.secret2
-  delete state.secret3
-  delete state.a_bob
-  delete state.b_alice
-  delete state.local.kx_sk
-
-  return state
-}
-
-
-
-
-
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":8,"chloride":23}],90:[function(require,module,exports){
-
-module.exports = function split (data, max) {
-
-  if(max <= 0) throw new Error('cannot split into zero (or smaller) length buffers')
-
-  if(data.length <= max)
-    return [data]
-  var out = [], len = 0
-
-  while(len < data.length) {
-    out.push(data.slice(len, Math.min(len + max, data.length)))
-    len += max
+  if (!srcPath.length) {
+    // no path at all.  easy.
+    // we've already handled the other stuff above.
+    result.pathname = null;
+    //to support http.request
+    if (result.search) {
+      result.path = '/' + result.search;
+    } else {
+      result.path = null;
+    }
+    result.href = result.format();
+    return result;
   }
 
-  return out
-}
+  // if a url ENDs in . or .., then it must get a trailing slash.
+  // however, if it ends in anything else non-slashy,
+  // then it must NOT get a trailing slash.
+  var last = srcPath.slice(-1)[0];
+  var hasTrailingSlash = (
+      (result.host || relative.host || srcPath.length > 1) &&
+      (last === '.' || last === '..') || last === '');
 
+  // strip single dots, resolve double dots to parent dir
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = srcPath.length; i >= 0; i--) {
+    last = srcPath[i];
+    if (last === '.') {
+      srcPath.splice(i, 1);
+    } else if (last === '..') {
+      srcPath.splice(i, 1);
+      up++;
+    } else if (up) {
+      srcPath.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (!mustEndAbs && !removeAllDots) {
+    for (; up--; up) {
+      srcPath.unshift('..');
+    }
+  }
+
+  if (mustEndAbs && srcPath[0] !== '' &&
+      (!srcPath[0] || srcPath[0].charAt(0) !== '/')) {
+    srcPath.unshift('');
+  }
+
+  if (hasTrailingSlash && (srcPath.join('/').substr(-1) !== '/')) {
+    srcPath.push('');
+  }
+
+  var isAbsolute = srcPath[0] === '' ||
+      (srcPath[0] && srcPath[0].charAt(0) === '/');
+
+  // put the host back
+  if (psychotic) {
+    result.hostname = result.host = isAbsolute ? '' :
+                                    srcPath.length ? srcPath.shift() : '';
+    //occationaly the auth can get stuck only in host
+    //this especially happens in cases like
+    //url.resolveObject('mailto:local1@domain1', 'local2@domain2')
+    var authInHost = result.host && result.host.indexOf('@') > 0 ?
+                     result.host.split('@') : false;
+    if (authInHost) {
+      result.auth = authInHost.shift();
+      result.host = result.hostname = authInHost.shift();
+    }
+  }
+
+  mustEndAbs = mustEndAbs || (result.host && srcPath.length);
+
+  if (mustEndAbs && !isAbsolute) {
+    srcPath.unshift('');
+  }
+
+  if (!srcPath.length) {
+    result.pathname = null;
+    result.path = null;
+  } else {
+    result.pathname = srcPath.join('/');
+  }
+
+  //to support request.http
+  if (!util.isNull(result.pathname) || !util.isNull(result.search)) {
+    result.path = (result.pathname ? result.pathname : '') +
+                  (result.search ? result.search : '');
+  }
+  result.auth = relative.auth || result.auth;
+  result.slashes = result.slashes || relative.slashes;
+  result.href = result.format();
+  return result;
+};
+
+Url.prototype.parseHost = function() {
+  var host = this.host;
+  var port = portPattern.exec(host);
+  if (port) {
+    port = port[0];
+    if (port !== ':') {
+      this.port = port.substr(1);
+    }
+    host = host.substr(0, host.length - port.length);
+  }
+  if (host) this.hostname = host;
+};
+
+},{"./util":88,"punycode":72,"querystring":75}],88:[function(require,module,exports){
+'use strict';
+
+module.exports = {
+  isString: function(arg) {
+    return typeof(arg) === 'string';
+  },
+  isObject: function(arg) {
+    return typeof(arg) === 'object' && arg !== null;
+  },
+  isNull: function(arg) {
+    return arg === null;
+  },
+  isNullOrUndefined: function(arg) {
+    return arg == null;
+  }
+};
 
 },{}]},{},[1])(1)
 });
