@@ -14,7 +14,7 @@ test('combine',function(t){
   t.plan(10)
   _(n, on({
     ready: function (e) {
-      var index=e.address.indexOf('tcp://localhost:8089')
+      var index=e.address.indexOf('tcp://127.0.0.1:8089')
       t.ok(e.address.indexOf('udp://0.0.0.0:8089')!==-1)
       t.ok(index!==-1)
  

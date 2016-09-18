@@ -23,9 +23,6 @@ function check(params, params2, t) {
 
   _(udp2,
     on({
-      ready:function(){
-        console.log('ready');
-      },
       message: function (d) {
         t.equal(d.data.toString(), 'hello')
         udp2.end()

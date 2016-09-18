@@ -132,7 +132,7 @@ test('shs+ws v4', function (t) {
     connection: onConnection(t, l),
     end: t.notOk
   }))
-  
+    
 })
 
 test('shs+ws v6', function (t) {
@@ -146,19 +146,21 @@ test('shs+ws v6', function (t) {
     },
     connection: onConnection(t, l),
     end: t.notOk
-  })) 
+  }))
+ 
 })
 
 test('shs+ws+unix', function (t) {
   t.plan(5)
 
   var l = listen('shs+ws+unix://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@'+ os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
-
+  
   _(l, on({
     ready: function (e) {
       connect(e.address, { keys: alice }, onConnect(t, l))
     },
     connection: onConnection(t, l),
     end: t.notOk
-  })) 
+  }))
+ 
 })

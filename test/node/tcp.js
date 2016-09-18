@@ -3,6 +3,7 @@ var _ = require('icebreaker')
 var listen = require('../../').listen
 var connect = require('../../').connect
 var on = require('../../').on
+var map = require('../../').map
 var os = require('os')
 
 test('tcp v4', function (t) {
@@ -42,7 +43,6 @@ test('tcp ipv6', function (t) {
     ready: function (e) {
       connect(e.address , function (err,connection) {
           t.notOk(err)
-        
         _('hello', connection, _.drain(function (d) {
           t.equal(d.toString(), 'world')
         }, function (err) {
