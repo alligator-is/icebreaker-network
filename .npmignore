@@ -3,6 +3,7 @@
 .*
 bower.json
 /scripts/
+Dockerfile
 appveyor.yml
 .travis.yml
 .zuul.yml
