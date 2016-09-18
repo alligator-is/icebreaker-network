@@ -20,11 +20,10 @@ var listen = {
     'shs+ws:': require('./lib/shs/listen')
   }
 }
-if (utp)
-  listen.protocols = {
-    'utp:': require('./lib/utp/listen'),
-    'shs+utp:': require('./lib/shs/listen')
-  }
+if (utp){
+  listen.protocols['utp:']= require('./lib/utp/listen')
+  listen.protocols['shs+utp:']=require('./lib/shs/listen')
+}
 
 listen.unixProtocols = {
   'tcp+unix:': require('./lib/tcp/listen'),
@@ -42,11 +41,10 @@ connect.protocols = {
   'shs+ws:': require('./lib/shs/connect'),
 }
 
-if (utp)
-  connect.protocols = {
-    'utp:': require('./lib/utp/connect'),
-    'shs+utp:': require('./lib/shs/connect')
-  }
+if (utp){
+  connect.protocols['utp:'] = require('./lib/utp/connect')
+  connect.protocols['shs+utp:'] = require('./lib/shs/connect')
+}
 
 connect.unixProtocols = {
   'tcp+unix:': require('./lib/tcp/connect'),
@@ -65,14 +63,14 @@ module.exports = {
     })
     return ary
   },
-  register: function (name, connect, listen) {
+  register: function (name, _connect, _listen) {
     if (name.indexOf('+unix') !== -1) {
-      if (connect != null) connect.unixProtocols[name] = connect
-      if (listen != null) listen.unixProtocols[name] = listen
+      if (_connect != null) connect.unixProtocols[name] = _connect
+      if (_listen != null) listen.unixProtocols[name] = _listen
       return
     }
-    if (connect != null) connect.protocols[name] = connect
-    if (listen != null) listen.protocols[name] = listen
+    if (_connect != null) connect.protocols[name] = _connect
+    if (_listen != null) listen.protocols[name] = _listen
   },
   listen: function (s, params) {
     if (!params) params = {}
