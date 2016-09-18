@@ -1,18 +1,33 @@
-var connect = require('./lib/connect')
+var Connect = require('./lib/connect')
 var util = require('./lib/util')
 
+var connect = {}
+connect.protocols = {
+  'ws:': require('./lib/ws/connect'),
+  'wss:': require('./lib/ws/connect'),
+  'shs+ws:': require('./lib/shs/connect')
+}
+
 module.exports = {
+  protoNames: function () {
+    var ary = []
+    Object.keys(connect).forEach(function (k) {
+      Object.keys(connect[k]).forEach(function (i) {
+        if (ary.indexOf(i) === -1) ary.push(i)
+      })
+    })
+    return ary
+  },
+  register: function (name, _connect) {
+    if (_connect != null) connect.protocols[name] = _connect
+  },
   connect: function (s, params, cb) {
     if (util.isFunction(params) && !cb) {
       cb = params
       params = {}
     }
-    if (!params.protocols) params.protocols = {
-      'ws:': require('./lib/ws/connect'),
-      'wss:': require('./lib/ws/connect'),
-      'shs+ws:': require('./lib/shs/connect')
-    }
-    if (!params.unixProtocols) params.unixProtocols = {}
-    return connect(s, params, cb)
+    params.protocols = connect.protocols
+    params.unixProtocols = {}
+    return Connect(s, params, cb)
   }
 }
