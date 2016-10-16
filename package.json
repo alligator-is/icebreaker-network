@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "bs58": "^3.0.0",
-    "chloride": "^2.2.3",
+    "chloride": "^2.2.4",
     "datagram-stream": "^1.1.0",
     "icebreaker": "^1.0.3",
     "ip-address": "^5.8.2",
@@ -38,18 +38,18 @@
     "pull-defer": "^0.2.2",
     "pull-notify": "^0.1.1",
     "pull-pushable": "^2.0.1",
-    "pull-ws": "^3.2.4",
-    "secret-handshake": "^1.0.0",
-    "stream-to-pull-stream": "1.7.0"
+    "pull-ws": "^3.2.8",
+    "secret-handshake": "^1.1.1",
+    "stream-to-pull-stream": "1.7.2"
   },
   "devDependencies": {
     "browserify": "^13.1.0",
     "pull-goodbye": "^0.0.1",
     "pull-serializer": "^0.3.2",
-    "pull-stream": "^3.4.4",
+    "pull-stream": "^3.4.5",
     "pull-abortable": "^4.1.0",
-    "tape": "^4.6.0",
+    "tape": "^4.6.2",
     "uglifyjs": "^2.4.10",
-    "zuul": "^3.11.0"
+    "zuul": "^3.11.1"
   }
 }
