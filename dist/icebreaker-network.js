@@ -129,7 +129,7 @@ module.exports = function (params, cb) {
   })
 }
 }).call(this,require("buffer").Buffer)
-},{"../util":4,"buffer":11,"chloride":14,"icebreaker":undefined,"secret-handshake":79}],4:[function(require,module,exports){
+},{"../util":4,"buffer":11,"chloride":14,"icebreaker":undefined,"secret-handshake":80}],4:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var URL = require('url')
@@ -240,11 +240,12 @@ var util = module.exports = {
   }
 }
 }).call(this,require("buffer").Buffer)
-},{"bs58":10,"buffer":11,"chloride":14,"lodash.defaults":21,"net":9,"os":9,"path":24,"pull-notify":29,"url":88}],5:[function(require,module,exports){
+},{"bs58":10,"buffer":11,"chloride":14,"lodash.defaults":22,"net":9,"os":9,"path":25,"pull-notify":30,"url":89}],5:[function(require,module,exports){
 'use strict'
 var pick = require('lodash.pick')
 var url = require('url')
 var connect = require('pull-ws/client')
+var util = require('../util')
 
 module.exports = function (params, cb) {
   params = pick(params, 'host', 'port', 'path', 'protocol')
@@ -255,12 +256,15 @@ module.exports = function (params, cb) {
     slashes: true
   }
   if (params.path == null) {
+    if(util.isWindows()){
+      if(params.host ==='0.0.0.0')params.host='localhost'
+      if(params.host ==='::')params.host='localhost'
+    }
     address.hostname = params.host
     address.port = params.port
   } else {
     address = 'ws+unix://' + params.path
   }
-
   var c = connect(url.format(address), function (err) {
     if (err) return cb(err)
     c.type = 'connection'
@@ -270,7 +274,7 @@ module.exports = function (params, cb) {
     }
   })
 }
-},{"lodash.pick":22,"pull-ws/client":66,"url":88}],6:[function(require,module,exports){
+},{"../util":4,"lodash.pick":23,"pull-ws/client":67,"url":89}],6:[function(require,module,exports){
 // base-x encoding
 // Forked from https://github.com/cryptocoinjs/bs58
 // Originally written by Mike Hearn for BitcoinJ
@@ -358,6 +362,7 @@ module.exports = function base (ALPHABET) {
 },{}],7:[function(require,module,exports){
 'use strict'
 
+exports.byteLength = byteLength
 exports.toByteArray = toByteArray
 exports.fromByteArray = fromByteArray
 
@@ -365,23 +370,17 @@ var lookup = []
 var revLookup = []
 var Arr = typeof Uint8Array !== 'undefined' ? Uint8Array : Array
 
-function init () {
-  var code = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-  for (var i = 0, len = code.length; i < len; ++i) {
-    lookup[i] = code[i]
-    revLookup[code.charCodeAt(i)] = i
-  }
-
-  revLookup['-'.charCodeAt(0)] = 62
-  revLookup['_'.charCodeAt(0)] = 63
+var code = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+for (var i = 0, len = code.length; i < len; ++i) {
+  lookup[i] = code[i]
+  revLookup[code.charCodeAt(i)] = i
 }
 
-init()
+revLookup['-'.charCodeAt(0)] = 62
+revLookup['_'.charCodeAt(0)] = 63
 
-function toByteArray (b64) {
-  var i, j, l, tmp, placeHolders, arr
+function placeHoldersCount (b64) {
   var len = b64.length
-
   if (len % 4 > 0) {
     throw new Error('Invalid string. Length must be a multiple of 4')
   }
@@ -391,9 +390,19 @@ function toByteArray (b64) {
   // represent one byte
   // if there is only one, then the three characters before it represent 2 bytes
   // this is just a cheap hack to not do indexOf twice
-  placeHolders = b64[len - 2] === '=' ? 2 : b64[len - 1] === '=' ? 1 : 0
+  return b64[len - 2] === '=' ? 2 : b64[len - 1] === '=' ? 1 : 0
+}
 
+function byteLength (b64) {
   // base64 is 4/3 + up to two characters of the original data
+  return b64.length * 3 / 4 - placeHoldersCount(b64)
+}
+
+function toByteArray (b64) {
+  var i, j, l, tmp, placeHolders, arr
+  var len = b64.length
+  placeHolders = placeHoldersCount(b64)
+
   arr = new Arr(len * 3 / 4 - placeHolders)
 
   // if there are placeholders, only get up to the last complete 4 chars
@@ -2273,7 +2282,7 @@ function isnan (val) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":7,"ieee754":16,"isarray":20}],12:[function(require,module,exports){
+},{"base64-js":7,"ieee754":16,"isarray":21}],12:[function(require,module,exports){
 var _require = require //fool browserify
 module.exports = _require('sodium-prebuilt/build/Release/sodium')
 
@@ -2281,18 +2290,12 @@ module.exports = _require('sodium-prebuilt/build/Release/sodium')
 
 module.exports = require('sodium-browserify-tweetnacl')
 
-},{"sodium-browserify-tweetnacl":84}],14:[function(require,module,exports){
+},{"sodium-browserify-tweetnacl":85}],14:[function(require,module,exports){
 (function (process,Buffer){
+var isElectron = require('is-electron')
 
 if(process.env.CHLORIDE_JS)
   return module.exports = require('./browser-small')
-
-function isElectron () {
-  try {
-    require('electron')
-    return true
-  } catch (_) { return false }
-}
 
 try {
   var cl = module.exports = require('./bindings')
@@ -2326,8 +2329,9 @@ try {
 }
 
 
+
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./bindings":12,"./browser-small":13,"_process":25,"buffer":11,"electron":8}],15:[function(require,module,exports){
+},{"./bindings":12,"./browser-small":13,"_process":26,"buffer":11,"is-electron":20}],15:[function(require,module,exports){
 /*
  * ed2curve: convert Ed25519 signing key pair into Curve25519
  * key pair suitable for Diffie-Hellman key exchange.
@@ -2495,7 +2499,7 @@ try {
 
 }));
 
-},{"tweetnacl/nacl-fast":87}],16:[function(require,module,exports){
+},{"tweetnacl/nacl-fast":88}],16:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
   var eLen = nBytes * 8 - mLen - 1
@@ -2642,13 +2646,29 @@ function isSlowBuffer (obj) {
 }
 
 },{}],20:[function(require,module,exports){
+(function (process){
+// https://github.com/electron/electron/issues/2288
+function isElectron() {
+    if (typeof window !== 'undefined' && window.process && window.process.type === 'renderer') {
+        return true;
+    }
+    if (typeof process !== 'undefined' && process.versions && !!process.versions.electron) {
+        return true;
+    }
+    return false;
+}
+
+module.exports = isElectron;
+
+}).call(this,require('_process'))
+},{"_process":26}],21:[function(require,module,exports){
 var toString = {}.toString;
 
 module.exports = Array.isArray || function (arr) {
   return toString.call(arr) == '[object Array]';
 };
 
-},{}],21:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 /**
  * lodash (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -3318,7 +3338,7 @@ function keysIn(object) {
 
 module.exports = defaults;
 
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 (function (global){
 /**
  * lodash (Custom Build) <https://lodash.com/>
@@ -3825,7 +3845,7 @@ var pick = baseRest(function(object, props) {
 module.exports = pick;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 
 var looper = module.exports = function (fun) {
   (function next () {
@@ -3841,7 +3861,7 @@ var looper = module.exports = function (fun) {
   })()
 }
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -4069,7 +4089,7 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":25}],25:[function(require,module,exports){
+},{"_process":26}],26:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -4081,25 +4101,40 @@ var process = module.exports = {};
 var cachedSetTimeout;
 var cachedClearTimeout;
 
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
 (function () {
     try {
-        cachedSetTimeout = setTimeout;
-    } catch (e) {
-        cachedSetTimeout = function () {
-            throw new Error('setTimeout is not defined');
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
         }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
     }
     try {
-        cachedClearTimeout = clearTimeout;
-    } catch (e) {
-        cachedClearTimeout = function () {
-            throw new Error('clearTimeout is not defined');
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
         }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
     }
 } ())
 function runTimeout(fun) {
     if (cachedSetTimeout === setTimeout) {
         //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
         return setTimeout(fun, 0);
     }
     try {
@@ -4120,6 +4155,11 @@ function runTimeout(fun) {
 function runClearTimeout(marker) {
     if (cachedClearTimeout === clearTimeout) {
         //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
         return clearTimeout(marker);
     }
     try {
@@ -4231,7 +4271,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var sodium = require('chloride')
@@ -4380,7 +4420,7 @@ exports.createDecryptStream = function (key, nonce) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"chloride":14,"increment-buffer":17,"pull-reader":32,"pull-through":65,"split-buffer":85}],27:[function(require,module,exports){
+},{"buffer":11,"chloride":14,"increment-buffer":17,"pull-reader":33,"pull-through":66,"split-buffer":86}],28:[function(require,module,exports){
 var noop = function () {}
 
 function abortAll(ary, abort, cb) {
@@ -4423,7 +4463,7 @@ module.exports = function (streams) {
 
 
 
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 var Reader = require('pull-reader')
 var Writer = require('pull-pushable')
 var cat = require('pull-cat')
@@ -4474,7 +4514,7 @@ module.exports = function (opts, _cb) {
   }
 }
 
-},{"pull-cat":27,"pull-pair":30,"pull-pushable":31,"pull-reader":32}],29:[function(require,module,exports){
+},{"pull-cat":28,"pull-pair":31,"pull-pushable":32,"pull-reader":33}],30:[function(require,module,exports){
 
 var pushable = require('pull-pushable')
 
@@ -4512,7 +4552,7 @@ module.exports = function () {
   return notify
 }
 
-},{"pull-pushable":31}],30:[function(require,module,exports){
+},{"pull-pushable":32}],31:[function(require,module,exports){
 'use strict'
 
 //a pair of pull streams where one drains from the other
@@ -4544,7 +4584,7 @@ module.exports = function () {
 }
 
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 module.exports = pullPushable
 
 function pullPushable (onClose) {
@@ -4620,7 +4660,7 @@ function pullPushable (onClose) {
   }
 }
 
-},{}],32:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 'use strict'
 var State = require('./state')
 
@@ -4744,7 +4784,7 @@ module.exports = function (timeout) {
 
 
 
-},{"./state":33}],33:[function(require,module,exports){
+},{"./state":34}],34:[function(require,module,exports){
 (function (Buffer){
 
 module.exports = function () {
@@ -4821,7 +4861,7 @@ module.exports = function () {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11}],34:[function(require,module,exports){
+},{"buffer":11}],35:[function(require,module,exports){
 'use strict'
 
 var sources  = require('./sources')
@@ -4840,7 +4880,7 @@ for(var k in sinks)
   exports[k] = sinks[k]
 
 
-},{"./pull":35,"./sinks":40,"./sources":47,"./throughs":56}],35:[function(require,module,exports){
+},{"./pull":36,"./sinks":41,"./sources":48,"./throughs":57}],36:[function(require,module,exports){
 'use strict'
 
 module.exports = function pull (a) {
@@ -4850,8 +4890,25 @@ module.exports = function pull (a) {
     for(var i = 0; i < length; i++)
       args[i] = arguments[i]
     return function (read) {
-      args.unshift(read)
-      return pull.apply(null, args)
+      if (args == null) {
+        throw new TypeError("partial sink should only be called once!")
+      }
+
+      // Grab the reference after the check, because it's always an array now
+      // (engines like that kind of consistency).
+      var ref = args
+      args = null
+
+      // Prioritize common case of small number of pulls.
+      switch (length) {
+      case 1: return pull(read, ref[0])
+      case 2: return pull(read, ref[0], ref[1])
+      case 3: return pull(read, ref[0], ref[1], ref[2])
+      case 4: return pull(read, ref[0], ref[1], ref[2], ref[3])
+      default:
+        ref.unshift(read)
+        return pull.apply(null, ref)
+      }
     }
   }
 
@@ -4874,12 +4931,7 @@ module.exports = function pull (a) {
   return read
 }
 
-
-
-
-
-
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 'use strict'
 
 var reduce = require('./reduce')
@@ -4891,7 +4943,7 @@ module.exports = function collect (cb) {
   }, [], cb)
 }
 
-},{"./reduce":43}],37:[function(require,module,exports){
+},{"./reduce":44}],38:[function(require,module,exports){
 'use strict'
 
 var reduce = require('./reduce')
@@ -4902,7 +4954,7 @@ module.exports = function concat (cb) {
   }, '', cb)
 }
 
-},{"./reduce":43}],38:[function(require,module,exports){
+},{"./reduce":44}],39:[function(require,module,exports){
 'use strict'
 
 module.exports = function drain (op, done) {
@@ -4952,7 +5004,7 @@ module.exports = function drain (op, done) {
   return sink
 }
 
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -4982,7 +5034,7 @@ module.exports = function find (test, cb) {
 
 
 
-},{"../util/prop":63,"./drain":38}],40:[function(require,module,exports){
+},{"../util/prop":64,"./drain":39}],41:[function(require,module,exports){
 'use strict'
 
 module.exports = {
@@ -4996,7 +5048,7 @@ module.exports = {
 }
 
 
-},{"./collect":36,"./concat":37,"./drain":38,"./find":39,"./log":41,"./on-end":42,"./reduce":43}],41:[function(require,module,exports){
+},{"./collect":37,"./concat":38,"./drain":39,"./find":40,"./log":42,"./on-end":43,"./reduce":44}],42:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5007,7 +5059,7 @@ module.exports = function log (done) {
   }, done)
 }
 
-},{"./drain":38}],42:[function(require,module,exports){
+},{"./drain":39}],43:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5016,7 +5068,7 @@ module.exports = function onEnd (done) {
   return drain(null, done)
 }
 
-},{"./drain":38}],43:[function(require,module,exports){
+},{"./drain":39}],44:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5030,7 +5082,7 @@ module.exports = function reduce (reducer, acc, cb) {
 }
 
 
-},{"./drain":38}],44:[function(require,module,exports){
+},{"./drain":39}],45:[function(require,module,exports){
 'use strict'
 
 module.exports = function count (max) {
@@ -5045,7 +5097,7 @@ module.exports = function count (max) {
 
 
 
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 'use strict'
 //a stream that ends immediately.
 module.exports = function empty () {
@@ -5054,7 +5106,7 @@ module.exports = function empty () {
   }
 }
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict'
 //a stream that errors immediately.
 module.exports = function error (err) {
@@ -5064,7 +5116,7 @@ module.exports = function error (err) {
 }
 
 
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 'use strict'
 module.exports = {
   keys: require('./keys'),
@@ -5076,7 +5128,7 @@ module.exports = {
   error: require('./error')
 }
 
-},{"./count":44,"./empty":45,"./error":46,"./infinite":48,"./keys":49,"./once":50,"./values":51}],48:[function(require,module,exports){
+},{"./count":45,"./empty":46,"./error":47,"./infinite":49,"./keys":50,"./once":51,"./values":52}],49:[function(require,module,exports){
 'use strict'
 module.exports = function infinite (generate) {
   generate = generate || Math.random
@@ -5088,7 +5140,7 @@ module.exports = function infinite (generate) {
 
 
 
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 'use strict'
 var values = require('./values')
 module.exports = function (object) {
@@ -5097,7 +5149,7 @@ module.exports = function (object) {
 
 
 
-},{"./values":51}],50:[function(require,module,exports){
+},{"./values":52}],51:[function(require,module,exports){
 'use strict'
 var abortCb = require('../util/abort-cb')
 
@@ -5115,7 +5167,7 @@ module.exports = function once (value, onAbort) {
 
 
 
-},{"../util/abort-cb":62}],51:[function(require,module,exports){
+},{"../util/abort-cb":63}],52:[function(require,module,exports){
 'use strict'
 var abortCb = require('../util/abort-cb')
 
@@ -5133,12 +5185,14 @@ module.exports = function values (array, onAbort) {
   return function (abort, cb) {
     if(abort)
       return abortCb(cb, abort, onAbort)
-    cb(i >= array.length || null, array[i++])
+    if(i >= array.length)
+      cb(true)
+    else
+      cb(null, array[i++])
   }
 }
 
-
-},{"../util/abort-cb":62}],52:[function(require,module,exports){
+},{"../util/abort-cb":63}],53:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5183,7 +5237,7 @@ module.exports = function asyncMap (map) {
 
 
 
-},{"../util/prop":63}],53:[function(require,module,exports){
+},{"../util/prop":64}],54:[function(require,module,exports){
 'use strict'
 
 var tester = require('../util/tester')
@@ -5194,7 +5248,7 @@ module.exports = function filterNot (test) {
   return filter(function (data) { return !test(data) })
 }
 
-},{"../util/tester":64,"./filter":54}],54:[function(require,module,exports){
+},{"../util/tester":65,"./filter":55}],55:[function(require,module,exports){
 'use strict'
 
 var tester = require('../util/tester')
@@ -5220,7 +5274,7 @@ module.exports = function filter (test) {
 }
 
 
-},{"../util/tester":64}],55:[function(require,module,exports){
+},{"../util/tester":65}],56:[function(require,module,exports){
 'use strict'
 
 var values = require('../sources/values')
@@ -5269,7 +5323,7 @@ module.exports = function flatten () {
 }
 
 
-},{"../sources/once":50,"../sources/values":51}],56:[function(require,module,exports){
+},{"../sources/once":51,"../sources/values":52}],57:[function(require,module,exports){
 'use strict'
 
 module.exports = {
@@ -5287,7 +5341,7 @@ module.exports = {
 
 
 
-},{"./async-map":52,"./filter":54,"./filter-not":53,"./flatten":55,"./map":57,"./non-unique":58,"./take":59,"./through":60,"./unique":61}],57:[function(require,module,exports){
+},{"./async-map":53,"./filter":55,"./filter-not":54,"./flatten":56,"./map":58,"./non-unique":59,"./take":60,"./through":61,"./unique":62}],58:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5312,7 +5366,7 @@ module.exports = function map (mapper) {
   }
 }
 
-},{"../util/prop":63}],58:[function(require,module,exports){
+},{"../util/prop":64}],59:[function(require,module,exports){
 'use strict'
 
 var unique = require('./unique')
@@ -5322,7 +5376,7 @@ module.exports = function nonUnique (field) {
   return unique(field, true)
 }
 
-},{"./unique":61}],59:[function(require,module,exports){
+},{"./unique":62}],60:[function(require,module,exports){
 'use strict'
 
 //read a number of items and then stop.
@@ -5365,7 +5419,7 @@ module.exports = function take (test, opts) {
   }
 }
 
-},{}],60:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 'use strict'
 
 //a pass through stream that doesn't change the value.
@@ -5390,7 +5444,7 @@ module.exports = function through (op, onEnd) {
   }
 }
 
-},{}],61:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5410,7 +5464,7 @@ module.exports = function unique (field, invert) {
 }
 
 
-},{"../util/prop":63,"./filter":54}],62:[function(require,module,exports){
+},{"../util/prop":64,"./filter":55}],63:[function(require,module,exports){
 module.exports = function abortCb(cb, abort, onAbort) {
   cb(abort)
   onAbort && onAbort(abort === true ? null: abort)
@@ -5418,7 +5472,7 @@ module.exports = function abortCb(cb, abort, onAbort) {
 }
 
 
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 module.exports = function prop (key) {
   return key && (
     'string' == typeof key
@@ -5429,7 +5483,7 @@ module.exports = function prop (key) {
   )
 }
 
-},{}],64:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 var prop = require('./prop')
 
 function id (e) { return e }
@@ -5442,7 +5496,7 @@ module.exports = function tester (test) {
   )
 }
 
-},{"./prop":63}],65:[function(require,module,exports){
+},{"./prop":64}],66:[function(require,module,exports){
 var looper = require('looper')
 
 module.exports = function (writer, ender) {
@@ -5513,7 +5567,7 @@ module.exports = function (writer, ender) {
 }
 
 
-},{"looper":23}],66:[function(require,module,exports){
+},{"looper":24}],67:[function(require,module,exports){
 'use strict';
 
 //load websocket library if we are not in the browser
@@ -5526,28 +5580,34 @@ function isFunction (f) {
 }
 
 module.exports = function (addr, opts) {
-  var stream
-  if(isFunction(opts)) opts = {onConnect: opts}
+  if (isFunction(opts)) opts = {onConnect: opts}
 
   var location = typeof window === 'undefined' ? {} : window.location
 
   var url = wsurl(addr, location)
   var socket = new WebSocket(url)
-  stream = duplex(socket, opts)
-  stream.remoteAddress = url
 
+  var stream = duplex(socket, opts)
+  stream.remoteAddress = url
   stream.close = function (cb) {
-    if (cb && typeof cb == 'function')
+    if (isFunction(cb)) {
       socket.addEventListener('close', cb)
+    }
     socket.close()
   }
+
+  socket.addEventListener('open', function (e) {
+    if (opts && isFunction(opts.onConnect)) {
+      opts.onConnect(null, stream)
+    }
+  })
 
   return stream
 }
 
 module.exports.connect = module.exports
 
-},{"./duplex":67,"./web-socket":71,"./ws-url":72}],67:[function(require,module,exports){
+},{"./duplex":68,"./web-socket":72,"./ws-url":73}],68:[function(require,module,exports){
 var source = require('./source')
 var sink = require('./sink')
 
@@ -5572,7 +5632,7 @@ function duplex (ws, opts) {
 };
 
 
-},{"./sink":69,"./source":70}],68:[function(require,module,exports){
+},{"./sink":70,"./source":71}],69:[function(require,module,exports){
 module.exports = function(socket, callback) {
   var remove = socket && (socket.removeEventListener || socket.removeListener);
 
@@ -5605,7 +5665,7 @@ module.exports = function(socket, callback) {
   socket.addEventListener('error', handleErr);
 };
 
-},{}],69:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 (function (process){
 var ready = require('./ready');
 
@@ -5617,6 +5677,9 @@ var ready = require('./ready');
   <<< examples/write.js
 
 **/
+
+var nextTick = typeof setImmediate !== 'undefined' ? setImmediate : process.nextTick
+
 module.exports = function(socket, opts) {
   return function (read) {
     opts = opts || {}
@@ -5631,7 +5694,6 @@ module.exports = function(socket, opts) {
             socket.addEventListener('close', function (ev) {
               if(ev.wasClean || ev.code === 1006) onClose()
               else {
-                console.log(ev)
                 var err = new Error('ws error')
                 err.event = ev
                 onClose(err)
@@ -5649,9 +5711,8 @@ module.exports = function(socket, opts) {
         if (end) {
           return read(end, function () {});
         }
-
         socket.send(data);
-        process.nextTick(function() {
+        nextTick(function() {
           read(null, next);
         });
       });
@@ -5661,11 +5722,9 @@ module.exports = function(socket, opts) {
   }
 }
 
-
-
-
 }).call(this,require('_process'))
-},{"./ready":68,"_process":25}],70:[function(require,module,exports){
+},{"./ready":69,"_process":26}],71:[function(require,module,exports){
+(function (Buffer){
 /**
   ### `source(socket)`
 
@@ -5681,11 +5740,17 @@ module.exports = function(socket, cb) {
   var ended;
   var started = false;
   socket.addEventListener('message', function(evt) {
-    if (receiver) {
-      return receiver(null, evt.data);
+    var data = evt.data;
+
+    if (data instanceof ArrayBuffer) {
+      data = new Buffer(data);
     }
 
-    buffer.push(evt.data);
+    if (receiver) {
+      return receiver(null, data);
+    }
+
+    buffer.push(data);
   });
 
   socket.addEventListener('close', function(evt) {
@@ -5710,7 +5775,6 @@ module.exports = function(socket, cb) {
   socket.addEventListener('open', function (evt) {
     if(started || ended) return
     started = true
-    cb && cb()
   })
 
   function read(abort, cb) {
@@ -5740,15 +5804,12 @@ module.exports = function(socket, cb) {
   return read;
 };
 
-
-
-
-
-},{}],71:[function(require,module,exports){
+}).call(this,require("buffer").Buffer)
+},{"buffer":11}],72:[function(require,module,exports){
 
 module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
 
-},{"ws":9}],72:[function(require,module,exports){
+},{"ws":9}],73:[function(require,module,exports){
 var rurl = require('relative-url')
 var map = {http:'ws', https:'wss'}
 var def = 'ws'
@@ -5758,7 +5819,7 @@ module.exports = function (url, location) {
 
 
 
-},{"relative-url":77}],73:[function(require,module,exports){
+},{"relative-url":78}],74:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -6295,7 +6356,7 @@ module.exports = function (url, location) {
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],74:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6381,7 +6442,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],75:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6468,13 +6529,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],76:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":74,"./encode":75}],77:[function(require,module,exports){
+},{"./decode":75,"./encode":76}],78:[function(require,module,exports){
 
 //normalize a ws url.
 var URL = require('url')
@@ -6572,7 +6633,7 @@ module.exports = function (url, location, protocolMap, defaultProtocol) {
 
 
 
-},{"url":88}],78:[function(require,module,exports){
+},{"url":89}],79:[function(require,module,exports){
 var pull = require('pull-stream')
 
 var Handshake = require('pull-handshake')
@@ -6677,7 +6738,7 @@ exports.createServerStream = function (bob, authorize, app_key, timeout) {
 
 
 
-},{"./state":81,"pull-handshake":28,"pull-stream":34}],79:[function(require,module,exports){
+},{"./state":82,"pull-handshake":29,"pull-stream":35}],80:[function(require,module,exports){
 (function (Buffer){
 var handshake = require('./handshake')
 var secure = require('./secure')
@@ -6712,10 +6773,14 @@ exports.createServer = function (bob, authorize, app_key, timeout) {
 }
 
 
-
+exports.toKeys = function (keys) {
+  if(isBuffer(keys, 32))
+    return cl.crypto_sign_seed_keypair(keys)
+  return keys
+}
 
 }).call(this,{"isBuffer":require("../is-buffer/index.js")})
-},{"../is-buffer/index.js":19,"./handshake":78,"./secure":80,"chloride":14}],80:[function(require,module,exports){
+},{"../is-buffer/index.js":19,"./handshake":79,"./secure":81,"chloride":14}],81:[function(require,module,exports){
 (function (Buffer){
 var sodium = require('chloride')
 var hash = sodium.crypto_hash_sha256
@@ -6756,7 +6821,7 @@ module.exports = function (cb) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"chloride":14,"pull-box-stream":26,"pull-stream":34}],81:[function(require,module,exports){
+},{"buffer":11,"chloride":14,"pull-box-stream":27,"pull-stream":35}],82:[function(require,module,exports){
 (function (Buffer){
 
 var sodium      = require('chloride')
@@ -6944,7 +7009,7 @@ function cleanSecrets () {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"chloride":14}],82:[function(require,module,exports){
+},{"buffer":11,"chloride":14}],83:[function(require,module,exports){
 (function (Buffer){
 // prototype class for hash functions
 function Hash (blockSize, finalSize) {
@@ -7017,7 +7082,7 @@ Hash.prototype._update = function () {
 module.exports = Hash
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11}],83:[function(require,module,exports){
+},{"buffer":11}],84:[function(require,module,exports){
 (function (Buffer){
 /**
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
@@ -7155,7 +7220,7 @@ Sha256.prototype._hash = function () {
 module.exports = Sha256
 
 }).call(this,require("buffer").Buffer)
-},{"./hash":82,"buffer":11,"inherits":18}],84:[function(require,module,exports){
+},{"./hash":83,"buffer":11,"inherits":18}],85:[function(require,module,exports){
 (function (Buffer){
 
 var tweetnacl = require('tweetnacl/nacl-fast')
@@ -7261,7 +7326,7 @@ exports.randombytes = function (buf) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"ed2curve":15,"sha.js/sha256":83,"tweetnacl-auth":86,"tweetnacl/nacl-fast":87}],85:[function(require,module,exports){
+},{"buffer":11,"ed2curve":15,"sha.js/sha256":84,"tweetnacl-auth":87,"tweetnacl/nacl-fast":88}],86:[function(require,module,exports){
 
 module.exports = function split (data, max) {
 
@@ -7280,7 +7345,7 @@ module.exports = function split (data, max) {
 }
 
 
-},{}],86:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 (function(root, f) {
   'use strict';
   if (typeof module !== 'undefined' && module.exports) module.exports = f(require('tweetnacl'));
@@ -7329,7 +7394,7 @@ module.exports = function split (data, max) {
 
 }));
 
-},{"tweetnacl":87}],87:[function(require,module,exports){
+},{"tweetnacl":88}],88:[function(require,module,exports){
 (function(nacl) {
 'use strict';
 
@@ -9719,7 +9784,7 @@ nacl.setPRNG = function(fn) {
 
 })(typeof module !== 'undefined' && module.exports ? module.exports : (self.nacl = self.nacl || {}));
 
-},{"crypto":8}],88:[function(require,module,exports){
+},{"crypto":8}],89:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -10453,7 +10518,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":89,"punycode":73,"querystring":76}],89:[function(require,module,exports){
+},{"./util":90,"punycode":74,"querystring":77}],90:[function(require,module,exports){
 'use strict';
 
 module.exports = {
