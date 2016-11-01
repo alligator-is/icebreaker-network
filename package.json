@@ -1,6 +1,6 @@
 {
   "name": "icebreaker-network",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
@@ -37,7 +37,6 @@
     "lodash.pick": "^4.4.0",
     "pull-defer": "^0.2.2",
     "pull-notify": "^0.1.1",
-    "pull-pushable": "^2.0.1",
     "pull-ws": "^3.2.8",
     "secret-handshake": "^1.1.1",
     "stream-to-pull-stream": "1.7.2"

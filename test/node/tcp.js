@@ -9,7 +9,7 @@ var os = require('os')
 test('tcp v4', function (t) {
   t.plan(5)
 
-  var l = listen('tcp://127.0.0.1:8090')
+  var l = listen('tcp://127.0.0.1:80')
 
   _(l, on({
     ready: function (e) {
