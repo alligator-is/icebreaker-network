@@ -87,46 +87,56 @@ module.exports = function connect(s, params, cb) {
   }
 
   if (isUnixProtocol(url)) return connect()
-  if (!dns.lookup || !net.isIP) return connect();
+  
+  if (!dns.lookup || !net.isIP) return connect()
+  
   if (util.isString(url.hostname) && !net.isIP(url.hostname)) {
     dns.lookup(url.hostname, function (err, address, family) {
-      connect(address);
+      connect(address)
     })
     return
   }
 
-  connect();
+  connect()
 }
 },{"./util":4,"dns":9,"net":9}],3:[function(require,module,exports){
 (function (Buffer){
 'use strict'
+var _ = typeof icebreaker === 'function' ? icebreaker : require('icebreaker')
 var SHS = require('secret-handshake')
 var util = require('../util')
-
-var _ = typeof icebreaker ==='function'?icebreaker : require('icebreaker')
 var cl = require('chloride')
 
 module.exports = function (params, cb) {
   params.protocol = params.protocol || 'shs+tcp:'
-    params.encoding  =  params.encoding||'base64' 
+  params.encoding = params.encoding || 'base64'
 
-  var protocol = params.protocol.substring(params.protocol.indexOf('+') + 1)
   if (!util.isString(params.auth)) throw new Error('public key required')
 
-  var publicKey = util.decode(params.auth,params.encoding)
-
+  var publicKey = util.decode(params.auth, params.encoding)
+  var protocol = params.protocol.substring(params.protocol.indexOf('+') + 1)
+  
   protocol = params.protocols[protocol] || params.unixProtocols[protocol]
-  protocol(params, function (err, connection) {
+  
+  protocol( params, function (err, connection) {
     if (err) return cb(err, connection)
-    _(connection, SHS.createClient({
-      publicKey:util.toBuffer(new Buffer(params.keys.publicKey.toString('base64'),'base64')),
-      secretKey:util.toBuffer(new Buffer(params.keys.secretKey,'base64').toString('base64'))},
-      new Buffer(cl.crypto_hash_sha256(new Buffer(params.appKey)), 'base64'))(publicKey, function(err, s) {
-      if (err) return cb(err)
-      cb(null, util.defaults({ appKey: params.appKey }, util.defaults(s, connection)))
 
-    }), connection)
+    _(
+      connection,
+      SHS.createClient({
+        publicKey: util.decode(util.encode(util.decode(params.keys.publicKey, params.encoding), 'base64'), 'base64'),
+        secretKey: util.decode(util.encode(util.decode(params.keys.secretKey, params.encoding), 'base64'), 'base64')
+      },
+      new Buffer(cl.crypto_hash_sha256(new Buffer(params.appKey)), 'base64'))(publicKey, function (err, s) {
+        if (err) return cb(err)
+      
+        cb(null, util.defaults({ appKey: params.appKey }, util.defaults(s, connection)))
+      }),
+      connection
+    )
+
   })
+
 }
 }).call(this,require("buffer").Buffer)
 },{"../util":4,"buffer":11,"chloride":14,"icebreaker":undefined,"secret-handshake":80}],4:[function(require,module,exports){
@@ -137,9 +147,9 @@ var os = require('os')
 var path = require('path')
 var cl = require('chloride')
 var isIPv6 = require('net').isIPv6
-var bs58  = require('bs58')
+var bs58 = require('bs58')
 var Notify = require('pull-notify')
-   
+
 var util = module.exports = {
 
   isFunction: function (f) {
@@ -167,53 +177,58 @@ var util = module.exports = {
       if (obj.hasOwnProperty(key)) return false
     return true
   },
+
   isWindows: function () {
-    return os != null && os.platform !=null? os.platform() === 'win32' : false
+    return os != null && os.platform != null ? os.platform() === 'win32' : false
   },
 
-  encode:function(buf,encoding){
-    if(encoding==='base58') return bs58.encode(buf)
+  encode: function (buf, encoding) {
+    if (encoding === 'base58') return bs58.encode(buf)
     return buf.toString(encoding)
   },
 
-  decode:function(s,encoding){
-    if(encoding==='base58') return new Buffer(bs58.decode(s))
-    return new Buffer(s,encoding)
+  decode: function (s, encoding) {
+    if (encoding === 'base58') return new Buffer(bs58.decode(s))
+    return new Buffer(s, encoding)
   },
 
-  createNotify:function(){
-    var notify = Notify.apply(Notify,[].slice.call(arguments))
+  createNotify: function () {
+    var notify = Notify.apply(Notify, [].slice.call(arguments))
     var listen = notify.listen
-    notify.listen = function(){
-    var l = listen.apply(notify,arguments)
-    var s =  function source(){
-      l.apply(null,arguments)
+    
+    notify.listen = function () {
+      var l = listen.apply(notify, arguments)
+      var s = function source() {
+        l.apply(null, arguments)
+      }
+
+      s.end = l.end
+      return s
     }
 
-    s.end = l.end
-    return s
+    notify.end = function (err) {
+      notify.abort(err || true)
     }
-    notify.end = function(err){
-      notify.abort(err||true)
-    }
-    
+
     return notify
   },
 
-  toRemoteAddress: function (e,encoding) {
+  toRemoteAddress: function (e, encoding) {
     var addr = e.protocol + '//'
-    if (Buffer.isBuffer(e.remote)) addr += encodeURIComponent(util.encode(e.remote,encoding||'base64')) + '@'
+    if (Buffer.isBuffer(e.remote)) addr += encodeURIComponent(util.encode(e.remote, encoding || 'base64')) + '@'
     addr += isIPv6(e.remoteAddress) ? '[' + e.remoteAddress + ']' : e.remoteAddress
     if (e.remotePort != null) addr += ':' + e.remotePort
     if (e.appKey != null) addr += '/' + e.appKey
     return addr
   },
-  
+
   parseUrl: function (s, d) {
     if (s.trim().indexOf('://') == -1) {
       s = d + '//' || 'tcp://' + s
     }
+    
     var url = URL.parse(s, true, true)
+    
     for (var k in url.query) {
       if (url.query[k] === 'true') {
         url.query[k] = true
@@ -222,6 +237,7 @@ var util = module.exports = {
         url.query[k] = false
       }
     }
+    
     var isWindows = util.isWindows;
 
     if (url.protocol.indexOf('+unix') !== -1) {
@@ -253,22 +269,27 @@ var util = require('../util')
 
 module.exports = function (params, cb) {
   params = pick(params, 'host', 'port', 'path', 'protocol')
+
   var address = {
     protocol: params.protocol,
     port: params.port,
     pathname: params.path,
     slashes: true
   }
+
   if (params.path == null) {
     if(util.isWindows()){
       if(params.host ==='0.0.0.0')params.host='localhost'
       if(params.host ==='::')params.host='localhost'
     }
+  
     address.hostname = params.host
     address.port = params.port
+  
   } else {
     address = 'ws+unix://' + params.path
   }
+
   var c = connect(url.format(address), function (err) {
     if (err) return cb(err)
     c.type = 'connection'
@@ -277,6 +298,7 @@ module.exports = function (params, cb) {
       cb = null
     }
   })
+  
 }
 },{"../util":4,"lodash.pick":23,"pull-ws/client":67,"url":89}],6:[function(require,module,exports){
 // base-x encoding
@@ -5077,14 +5099,24 @@ module.exports = function onEnd (done) {
 
 var drain = require('./drain')
 
-module.exports = function reduce (reducer, acc, cb) {
-  return drain(function (data) {
+module.exports = function reduce (reducer, acc, cb ) {
+  if(!cb) cb = acc, acc = null
+  var sink = drain(function (data) {
     acc = reducer(acc, data)
   }, function (err) {
     cb(err, acc)
   })
+  if (arguments.length === 2)
+    return function (source) {
+      source(null, function (end, data) {
+        //if ended immediately, and no initial...
+        if(end) return cb(end === true ? null : end)
+        acc = data; sink(source)
+      })
+    }
+  else
+    return sink
 }
-
 
 },{"./drain":39}],45:[function(require,module,exports){
 'use strict'
