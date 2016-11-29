@@ -4,7 +4,7 @@ var Listen = require('./lib/listen')
 var unixListen = require('./lib/unixListen')
 var defaults = require('lodash.defaults')
 var utp
-
+var isFunction = require('icebreaker/util/isFunction')
 try {
   utp = require('utp-native')
 }
@@ -83,7 +83,7 @@ module.exports = {
     return Listen(s, params)
   },
   connect: function (s, params, cb) {
-    if (util.isFunction(params) && !cb) {
+    if (isFunction(params) && !cb) {
       cb = params
       params = {}
     }

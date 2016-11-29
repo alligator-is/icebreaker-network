@@ -1,5 +1,6 @@
 var Connect = require('./lib/connect')
-var util = require('./lib/util')
+var isFunction = window.icebreaker||require('icebreaker').isFunction
+
 
 var connect = {}
 connect.protocols = {
@@ -22,7 +23,7 @@ module.exports = {
     if (_connect != null) connect.protocols[name] = _connect
   },
   connect: function (s, params, cb) {
-    if (util.isFunction(params) && !cb) {
+    if (isFunction(params) && !cb) {
       cb = params
       params = {}
     }

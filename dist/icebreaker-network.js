@@ -1,6 +1,7 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.network = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 var Connect = require('./lib/connect')
-var util = require('./lib/util')
+var isFunction = window.icebreaker||require('icebreaker').isFunction
+
 
 var connect = {}
 connect.protocols = {
@@ -23,7 +24,7 @@ module.exports = {
     if (_connect != null) connect.protocols[name] = _connect
   },
   connect: function (s, params, cb) {
-    if (util.isFunction(params) && !cb) {
+    if (isFunction(params) && !cb) {
       cb = params
       params = {}
     }
@@ -32,15 +33,16 @@ module.exports = {
     return Connect(s, params, cb)
   }
 }
-},{"./lib/connect":2,"./lib/shs/connect":3,"./lib/util":4,"./lib/ws/connect":5}],2:[function(require,module,exports){
+},{"./lib/connect":2,"./lib/shs/connect":3,"./lib/ws/connect":5,"icebreaker":undefined}],2:[function(require,module,exports){
 'use strict'
 var util = require('./util')
 var defaults = util.defaults
 var net = require('net')
 var dns = require('dns')
+var _ = window.icebreaker||require('icebreaker')
 
 module.exports = function connect(s, params, cb) {
-  if (util.isFunction(params) && !cb) {
+  if (_.isFunction(params) && !cb) {
     cb = params
     params = {}
   }
@@ -53,7 +55,7 @@ module.exports = function connect(s, params, cb) {
     return unixProtocols[url.protocol] != null
   }
 
-  if (!util.isFunction(cb)) throw new Error('cb is required')
+  if (!_.isFunction(cb)) throw new Error('cb is required')
 
   var url = util.parseUrl(s)
 
@@ -90,7 +92,7 @@ module.exports = function connect(s, params, cb) {
   
   if (!dns.lookup || !net.isIP) return connect()
   
-  if (util.isString(url.hostname) && !net.isIP(url.hostname)) {
+  if (_.isString(url.hostname) && !net.isIP(url.hostname)) {
     dns.lookup(url.hostname, function (err, address, family) {
       connect(address)
     })
@@ -99,7 +101,7 @@ module.exports = function connect(s, params, cb) {
 
   connect()
 }
-},{"./util":4,"dns":9,"net":9}],3:[function(require,module,exports){
+},{"./util":4,"dns":9,"icebreaker":undefined,"net":9}],3:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var _ = typeof icebreaker === 'function' ? icebreaker : require('icebreaker')
@@ -110,8 +112,7 @@ var cl = require('chloride')
 module.exports = function (params, cb) {
   params.protocol = params.protocol || 'shs+tcp:'
   params.encoding = params.encoding || 'base64'
-
-  if (!util.isString(params.auth)) throw new Error('public key required')
+  if (!_.isString(params.auth)) throw new Error('public key required')
 
   var publicKey = util.decode(params.auth, params.encoding)
   var protocol = params.protocol.substring(params.protocol.indexOf('+') + 1)
@@ -139,7 +140,7 @@ module.exports = function (params, cb) {
 
 }
 }).call(this,require("buffer").Buffer)
-},{"../util":4,"buffer":11,"chloride":14,"icebreaker":undefined,"secret-handshake":80}],4:[function(require,module,exports){
+},{"../util":4,"buffer":11,"chloride":14,"icebreaker":undefined,"secret-handshake":79}],4:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var URL = require('url')
@@ -148,21 +149,10 @@ var path = require('path')
 var cl = require('chloride')
 var isIPv6 = require('net').isIPv6
 var bs58 = require('bs58')
-var Notify = require('pull-notify')
+
+var _ = window.icebreaker||require('icebreaker')
 
 var util = module.exports = {
-
-  isFunction: function (f) {
-    return 'function' === typeof f
-  },
-
-  isString: function (s) {
-    return typeof s === 'string'
-  },
-
-  isPlainObject: function (o) {
-    return o && 'object' === typeof o && !Array.isArray(o)
-  },
 
   defaults: require('lodash.defaults'),
 
@@ -183,36 +173,16 @@ var util = module.exports = {
   },
 
   encode: function (buf, encoding) {
+    if(typeof buf ==="string")return buf
     if (encoding === 'base58') return bs58.encode(buf)
     return buf.toString(encoding)
   },
 
   decode: function (s, encoding) {
+    if(Buffer.isBuffer(s)) return s
     if (encoding === 'base58') return new Buffer(bs58.decode(s))
     return new Buffer(s, encoding)
   },
-
-  createNotify: function () {
-    var notify = Notify.apply(Notify, [].slice.call(arguments))
-    var listen = notify.listen
-    
-    notify.listen = function () {
-      var l = listen.apply(notify, arguments)
-      var s = function source() {
-        l.apply(null, arguments)
-      }
-
-      s.end = l.end
-      return s
-    }
-
-    notify.end = function (err) {
-      notify.abort(err || true)
-    }
-
-    return notify
-  },
-
   toRemoteAddress: function (e, encoding) {
     var addr = e.protocol + '//'
     if (Buffer.isBuffer(e.remote)) addr += encodeURIComponent(util.encode(e.remote, encoding || 'base64')) + '@'
@@ -248,7 +218,7 @@ var util = module.exports = {
       }
     }
 
-    if (util.isString(url.port)) url.port = parseInt(url.port)
+    if (_.isString(url.port)) url.port = parseInt(url.port)
 
     if (url.protocol.indexOf('shs+') !== -1) {
       if (url.path == null || url.path.length === 1) throw new Error('appKey is required')
@@ -260,7 +230,7 @@ var util = module.exports = {
   }
 }
 }).call(this,require("buffer").Buffer)
-},{"bs58":10,"buffer":11,"chloride":14,"lodash.defaults":22,"net":9,"os":9,"path":25,"pull-notify":30,"url":89}],5:[function(require,module,exports){
+},{"bs58":10,"buffer":11,"chloride":14,"icebreaker":undefined,"lodash.defaults":22,"net":9,"os":9,"path":25,"url":88}],5:[function(require,module,exports){
 'use strict'
 var pick = require('lodash.pick')
 var url = require('url')
@@ -300,7 +270,7 @@ module.exports = function (params, cb) {
   })
   
 }
-},{"../util":4,"lodash.pick":23,"pull-ws/client":67,"url":89}],6:[function(require,module,exports){
+},{"../util":4,"lodash.pick":23,"pull-ws/client":66,"url":88}],6:[function(require,module,exports){
 // base-x encoding
 // Forked from https://github.com/cryptocoinjs/bs58
 // Originally written by Mike Hearn for BitcoinJ
@@ -2316,7 +2286,7 @@ module.exports = _require('sodium-prebuilt/build/Release/sodium')
 
 module.exports = require('sodium-browserify-tweetnacl')
 
-},{"sodium-browserify-tweetnacl":85}],14:[function(require,module,exports){
+},{"sodium-browserify-tweetnacl":84}],14:[function(require,module,exports){
 (function (process,Buffer){
 var isElectron = require('is-electron')
 
@@ -2525,7 +2495,7 @@ try {
 
 }));
 
-},{"tweetnacl/nacl-fast":88}],16:[function(require,module,exports){
+},{"tweetnacl/nacl-fast":87}],16:[function(require,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
   var eLen = nBytes * 8 - mLen - 1
@@ -4446,7 +4416,7 @@ exports.createDecryptStream = function (key, nonce) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"chloride":14,"increment-buffer":17,"pull-reader":33,"pull-through":66,"split-buffer":86}],28:[function(require,module,exports){
+},{"buffer":11,"chloride":14,"increment-buffer":17,"pull-reader":32,"pull-through":65,"split-buffer":85}],28:[function(require,module,exports){
 var noop = function () {}
 
 function abortAll(ary, abort, cb) {
@@ -4540,45 +4510,7 @@ module.exports = function (opts, _cb) {
   }
 }
 
-},{"pull-cat":28,"pull-pair":31,"pull-pushable":32,"pull-reader":33}],30:[function(require,module,exports){
-
-var pushable = require('pull-pushable')
-
-module.exports = function () {
-  var listeners = []
-
-  function notify (message) {
-    // notify by pushing to all listeners
-    for (var i = 0; i < listeners.length; i++) {
-      listeners[i].push(message)
-    }
-    return message
-  }
-
-  notify.listen = function () {
-    // create listener with `onClose` handler
-    var listener = pushable(function onClose () {
-      // if listener is found, delete from list
-      var index = listeners.indexOf(listener)
-      if (index !== -1) listeners.splice(index, 1)
-    })
-    listeners.push(listener)
-    return listener
-  }
-
-  notify.abort = function (err) {
-    // abort by ending all listeners
-    while (listeners.length) listeners[0].end(err)
-  }
-
-  notify.end = function () {
-    return notify.abort(true)
-  }
-
-  return notify
-}
-
-},{"pull-pushable":32}],31:[function(require,module,exports){
+},{"pull-cat":28,"pull-pair":30,"pull-pushable":31,"pull-reader":32}],30:[function(require,module,exports){
 'use strict'
 
 //a pair of pull streams where one drains from the other
@@ -4610,7 +4542,7 @@ module.exports = function () {
 }
 
 
-},{}],32:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 module.exports = pullPushable
 
 function pullPushable (onClose) {
@@ -4686,7 +4618,7 @@ function pullPushable (onClose) {
   }
 }
 
-},{}],33:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 'use strict'
 var State = require('./state')
 
@@ -4810,7 +4742,7 @@ module.exports = function (timeout) {
 
 
 
-},{"./state":34}],34:[function(require,module,exports){
+},{"./state":33}],33:[function(require,module,exports){
 (function (Buffer){
 
 module.exports = function () {
@@ -4887,7 +4819,7 @@ module.exports = function () {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11}],35:[function(require,module,exports){
+},{"buffer":11}],34:[function(require,module,exports){
 'use strict'
 
 var sources  = require('./sources')
@@ -4906,7 +4838,7 @@ for(var k in sinks)
   exports[k] = sinks[k]
 
 
-},{"./pull":36,"./sinks":41,"./sources":48,"./throughs":57}],36:[function(require,module,exports){
+},{"./pull":35,"./sinks":40,"./sources":47,"./throughs":56}],35:[function(require,module,exports){
 'use strict'
 
 module.exports = function pull (a) {
@@ -4957,7 +4889,7 @@ module.exports = function pull (a) {
   return read
 }
 
-},{}],37:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 'use strict'
 
 var reduce = require('./reduce')
@@ -4969,7 +4901,7 @@ module.exports = function collect (cb) {
   }, [], cb)
 }
 
-},{"./reduce":44}],38:[function(require,module,exports){
+},{"./reduce":43}],37:[function(require,module,exports){
 'use strict'
 
 var reduce = require('./reduce')
@@ -4980,7 +4912,7 @@ module.exports = function concat (cb) {
   }, '', cb)
 }
 
-},{"./reduce":44}],39:[function(require,module,exports){
+},{"./reduce":43}],38:[function(require,module,exports){
 'use strict'
 
 module.exports = function drain (op, done) {
@@ -5030,7 +4962,7 @@ module.exports = function drain (op, done) {
   return sink
 }
 
-},{}],40:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5060,7 +4992,7 @@ module.exports = function find (test, cb) {
 
 
 
-},{"../util/prop":64,"./drain":39}],41:[function(require,module,exports){
+},{"../util/prop":63,"./drain":38}],40:[function(require,module,exports){
 'use strict'
 
 module.exports = {
@@ -5074,7 +5006,7 @@ module.exports = {
 }
 
 
-},{"./collect":37,"./concat":38,"./drain":39,"./find":40,"./log":42,"./on-end":43,"./reduce":44}],42:[function(require,module,exports){
+},{"./collect":36,"./concat":37,"./drain":38,"./find":39,"./log":41,"./on-end":42,"./reduce":43}],41:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5085,7 +5017,7 @@ module.exports = function log (done) {
   }, done)
 }
 
-},{"./drain":39}],43:[function(require,module,exports){
+},{"./drain":38}],42:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5094,7 +5026,7 @@ module.exports = function onEnd (done) {
   return drain(null, done)
 }
 
-},{"./drain":39}],44:[function(require,module,exports){
+},{"./drain":38}],43:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5118,7 +5050,7 @@ module.exports = function reduce (reducer, acc, cb ) {
     return sink
 }
 
-},{"./drain":39}],45:[function(require,module,exports){
+},{"./drain":38}],44:[function(require,module,exports){
 'use strict'
 
 module.exports = function count (max) {
@@ -5133,7 +5065,7 @@ module.exports = function count (max) {
 
 
 
-},{}],46:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 'use strict'
 //a stream that ends immediately.
 module.exports = function empty () {
@@ -5142,7 +5074,7 @@ module.exports = function empty () {
   }
 }
 
-},{}],47:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 'use strict'
 //a stream that errors immediately.
 module.exports = function error (err) {
@@ -5152,7 +5084,7 @@ module.exports = function error (err) {
 }
 
 
-},{}],48:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict'
 module.exports = {
   keys: require('./keys'),
@@ -5164,7 +5096,7 @@ module.exports = {
   error: require('./error')
 }
 
-},{"./count":45,"./empty":46,"./error":47,"./infinite":49,"./keys":50,"./once":51,"./values":52}],49:[function(require,module,exports){
+},{"./count":44,"./empty":45,"./error":46,"./infinite":48,"./keys":49,"./once":50,"./values":51}],48:[function(require,module,exports){
 'use strict'
 module.exports = function infinite (generate) {
   generate = generate || Math.random
@@ -5176,7 +5108,7 @@ module.exports = function infinite (generate) {
 
 
 
-},{}],50:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 'use strict'
 var values = require('./values')
 module.exports = function (object) {
@@ -5185,7 +5117,7 @@ module.exports = function (object) {
 
 
 
-},{"./values":52}],51:[function(require,module,exports){
+},{"./values":51}],50:[function(require,module,exports){
 'use strict'
 var abortCb = require('../util/abort-cb')
 
@@ -5203,7 +5135,7 @@ module.exports = function once (value, onAbort) {
 
 
 
-},{"../util/abort-cb":63}],52:[function(require,module,exports){
+},{"../util/abort-cb":62}],51:[function(require,module,exports){
 'use strict'
 var abortCb = require('../util/abort-cb')
 
@@ -5228,7 +5160,7 @@ module.exports = function values (array, onAbort) {
   }
 }
 
-},{"../util/abort-cb":63}],53:[function(require,module,exports){
+},{"../util/abort-cb":62}],52:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5273,7 +5205,7 @@ module.exports = function asyncMap (map) {
 
 
 
-},{"../util/prop":64}],54:[function(require,module,exports){
+},{"../util/prop":63}],53:[function(require,module,exports){
 'use strict'
 
 var tester = require('../util/tester')
@@ -5284,7 +5216,7 @@ module.exports = function filterNot (test) {
   return filter(function (data) { return !test(data) })
 }
 
-},{"../util/tester":65,"./filter":55}],55:[function(require,module,exports){
+},{"../util/tester":64,"./filter":54}],54:[function(require,module,exports){
 'use strict'
 
 var tester = require('../util/tester')
@@ -5310,7 +5242,7 @@ module.exports = function filter (test) {
 }
 
 
-},{"../util/tester":65}],56:[function(require,module,exports){
+},{"../util/tester":64}],55:[function(require,module,exports){
 'use strict'
 
 var values = require('../sources/values')
@@ -5359,7 +5291,7 @@ module.exports = function flatten () {
 }
 
 
-},{"../sources/once":51,"../sources/values":52}],57:[function(require,module,exports){
+},{"../sources/once":50,"../sources/values":51}],56:[function(require,module,exports){
 'use strict'
 
 module.exports = {
@@ -5377,7 +5309,7 @@ module.exports = {
 
 
 
-},{"./async-map":53,"./filter":55,"./filter-not":54,"./flatten":56,"./map":58,"./non-unique":59,"./take":60,"./through":61,"./unique":62}],58:[function(require,module,exports){
+},{"./async-map":52,"./filter":54,"./filter-not":53,"./flatten":55,"./map":57,"./non-unique":58,"./take":59,"./through":60,"./unique":61}],57:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5402,7 +5334,7 @@ module.exports = function map (mapper) {
   }
 }
 
-},{"../util/prop":64}],59:[function(require,module,exports){
+},{"../util/prop":63}],58:[function(require,module,exports){
 'use strict'
 
 var unique = require('./unique')
@@ -5412,7 +5344,7 @@ module.exports = function nonUnique (field) {
   return unique(field, true)
 }
 
-},{"./unique":62}],60:[function(require,module,exports){
+},{"./unique":61}],59:[function(require,module,exports){
 'use strict'
 
 //read a number of items and then stop.
@@ -5455,7 +5387,7 @@ module.exports = function take (test, opts) {
   }
 }
 
-},{}],61:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 'use strict'
 
 //a pass through stream that doesn't change the value.
@@ -5480,7 +5412,7 @@ module.exports = function through (op, onEnd) {
   }
 }
 
-},{}],62:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5500,7 +5432,7 @@ module.exports = function unique (field, invert) {
 }
 
 
-},{"../util/prop":64,"./filter":55}],63:[function(require,module,exports){
+},{"../util/prop":63,"./filter":54}],62:[function(require,module,exports){
 module.exports = function abortCb(cb, abort, onAbort) {
   cb(abort)
   onAbort && onAbort(abort === true ? null: abort)
@@ -5508,7 +5440,7 @@ module.exports = function abortCb(cb, abort, onAbort) {
 }
 
 
-},{}],64:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = function prop (key) {
   return key && (
     'string' == typeof key
@@ -5519,7 +5451,7 @@ module.exports = function prop (key) {
   )
 }
 
-},{}],65:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 var prop = require('./prop')
 
 function id (e) { return e }
@@ -5532,7 +5464,7 @@ module.exports = function tester (test) {
   )
 }
 
-},{"./prop":64}],66:[function(require,module,exports){
+},{"./prop":63}],65:[function(require,module,exports){
 var looper = require('looper')
 
 module.exports = function (writer, ender) {
@@ -5603,7 +5535,7 @@ module.exports = function (writer, ender) {
 }
 
 
-},{"looper":24}],67:[function(require,module,exports){
+},{"looper":24}],66:[function(require,module,exports){
 'use strict';
 
 //load websocket library if we are not in the browser
@@ -5643,7 +5575,7 @@ module.exports = function (addr, opts) {
 
 module.exports.connect = module.exports
 
-},{"./duplex":68,"./web-socket":72,"./ws-url":73}],68:[function(require,module,exports){
+},{"./duplex":67,"./web-socket":71,"./ws-url":72}],67:[function(require,module,exports){
 var source = require('./source')
 var sink = require('./sink')
 
@@ -5668,7 +5600,7 @@ function duplex (ws, opts) {
 };
 
 
-},{"./sink":70,"./source":71}],69:[function(require,module,exports){
+},{"./sink":69,"./source":70}],68:[function(require,module,exports){
 module.exports = function(socket, callback) {
   var remove = socket && (socket.removeEventListener || socket.removeListener);
 
@@ -5701,7 +5633,7 @@ module.exports = function(socket, callback) {
   socket.addEventListener('error', handleErr);
 };
 
-},{}],70:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 (function (process){
 var ready = require('./ready');
 
@@ -5759,7 +5691,7 @@ module.exports = function(socket, opts) {
 }
 
 }).call(this,require('_process'))
-},{"./ready":69,"_process":26}],71:[function(require,module,exports){
+},{"./ready":68,"_process":26}],70:[function(require,module,exports){
 (function (Buffer){
 /**
   ### `source(socket)`
@@ -5841,11 +5773,11 @@ module.exports = function(socket, cb) {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11}],72:[function(require,module,exports){
+},{"buffer":11}],71:[function(require,module,exports){
 
 module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
 
-},{"ws":9}],73:[function(require,module,exports){
+},{"ws":9}],72:[function(require,module,exports){
 var rurl = require('relative-url')
 var map = {http:'ws', https:'wss'}
 var def = 'ws'
@@ -5855,7 +5787,7 @@ module.exports = function (url, location) {
 
 
 
-},{"relative-url":78}],74:[function(require,module,exports){
+},{"relative-url":77}],73:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -6392,7 +6324,7 @@ module.exports = function (url, location) {
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],75:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6478,7 +6410,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],76:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6565,13 +6497,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],77:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":75,"./encode":76}],78:[function(require,module,exports){
+},{"./decode":74,"./encode":75}],77:[function(require,module,exports){
 
 //normalize a ws url.
 var URL = require('url')
@@ -6669,7 +6601,7 @@ module.exports = function (url, location, protocolMap, defaultProtocol) {
 
 
 
-},{"url":89}],79:[function(require,module,exports){
+},{"url":88}],78:[function(require,module,exports){
 var pull = require('pull-stream')
 
 var Handshake = require('pull-handshake')
@@ -6774,7 +6706,7 @@ exports.createServerStream = function (bob, authorize, app_key, timeout) {
 
 
 
-},{"./state":82,"pull-handshake":29,"pull-stream":35}],80:[function(require,module,exports){
+},{"./state":81,"pull-handshake":29,"pull-stream":34}],79:[function(require,module,exports){
 (function (Buffer){
 var handshake = require('./handshake')
 var secure = require('./secure')
@@ -6816,7 +6748,7 @@ exports.toKeys = function (keys) {
 }
 
 }).call(this,{"isBuffer":require("../is-buffer/index.js")})
-},{"../is-buffer/index.js":19,"./handshake":79,"./secure":81,"chloride":14}],81:[function(require,module,exports){
+},{"../is-buffer/index.js":19,"./handshake":78,"./secure":80,"chloride":14}],80:[function(require,module,exports){
 (function (Buffer){
 var sodium = require('chloride')
 var hash = sodium.crypto_hash_sha256
@@ -6857,7 +6789,7 @@ module.exports = function (cb) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"chloride":14,"pull-box-stream":27,"pull-stream":35}],82:[function(require,module,exports){
+},{"buffer":11,"chloride":14,"pull-box-stream":27,"pull-stream":34}],81:[function(require,module,exports){
 (function (Buffer){
 
 var sodium      = require('chloride')
@@ -7045,7 +6977,7 @@ function cleanSecrets () {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"chloride":14}],83:[function(require,module,exports){
+},{"buffer":11,"chloride":14}],82:[function(require,module,exports){
 (function (Buffer){
 // prototype class for hash functions
 function Hash (blockSize, finalSize) {
@@ -7118,7 +7050,7 @@ Hash.prototype._update = function () {
 module.exports = Hash
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11}],84:[function(require,module,exports){
+},{"buffer":11}],83:[function(require,module,exports){
 (function (Buffer){
 /**
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
@@ -7256,7 +7188,7 @@ Sha256.prototype._hash = function () {
 module.exports = Sha256
 
 }).call(this,require("buffer").Buffer)
-},{"./hash":83,"buffer":11,"inherits":18}],85:[function(require,module,exports){
+},{"./hash":82,"buffer":11,"inherits":18}],84:[function(require,module,exports){
 (function (Buffer){
 
 var tweetnacl = require('tweetnacl/nacl-fast')
@@ -7362,7 +7294,7 @@ exports.randombytes = function (buf) {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":11,"ed2curve":15,"sha.js/sha256":84,"tweetnacl-auth":87,"tweetnacl/nacl-fast":88}],86:[function(require,module,exports){
+},{"buffer":11,"ed2curve":15,"sha.js/sha256":83,"tweetnacl-auth":86,"tweetnacl/nacl-fast":87}],85:[function(require,module,exports){
 
 module.exports = function split (data, max) {
 
@@ -7381,7 +7313,7 @@ module.exports = function split (data, max) {
 }
 
 
-},{}],87:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 (function(root, f) {
   'use strict';
   if (typeof module !== 'undefined' && module.exports) module.exports = f(require('tweetnacl'));
@@ -7430,7 +7362,7 @@ module.exports = function split (data, max) {
 
 }));
 
-},{"tweetnacl":88}],88:[function(require,module,exports){
+},{"tweetnacl":87}],87:[function(require,module,exports){
 (function(nacl) {
 'use strict';
 
@@ -9820,7 +9752,7 @@ nacl.setPRNG = function(fn) {
 
 })(typeof module !== 'undefined' && module.exports ? module.exports : (self.nacl = self.nacl || {}));
 
-},{"crypto":8}],89:[function(require,module,exports){
+},{"crypto":8}],88:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -10554,7 +10486,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":90,"punycode":74,"querystring":77}],90:[function(require,module,exports){
+},{"./util":89,"punycode":73,"querystring":76}],89:[function(require,module,exports){
 'use strict';
 
 module.exports = {
