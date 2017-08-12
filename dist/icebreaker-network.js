@@ -142,7 +142,7 @@ module.exports = function (params, cb) {
 
 }
 }).call(this,require("buffer").Buffer)
-},{"../icebreaker":3,"../util":5,"buffer":12,"chloride":15,"secret-handshake":80}],5:[function(require,module,exports){
+},{"../icebreaker":3,"../util":5,"buffer":11,"chloride":15,"secret-handshake":80}],5:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var URL = require('url')
@@ -232,7 +232,7 @@ var util = module.exports = {
   }
 }
 }).call(this,require("buffer").Buffer)
-},{"./icebreaker":3,"bs58":11,"buffer":12,"chloride":15,"lodash.defaults":23,"net":10,"os":10,"path":26,"url":89}],6:[function(require,module,exports){
+},{"./icebreaker":3,"bs58":12,"buffer":11,"chloride":15,"lodash.defaults":22,"net":10,"os":10,"path":25,"url":89}],6:[function(require,module,exports){
 'use strict'
 var pick = require('lodash.pick')
 var url = require('url')
@@ -272,7 +272,7 @@ module.exports = function (params, cb) {
   })
   
 }
-},{"../util":5,"lodash.pick":24,"pull-ws/client":67,"url":89}],7:[function(require,module,exports){
+},{"../util":5,"lodash.pick":23,"pull-ws/client":66,"url":89}],7:[function(require,module,exports){
 // base-x encoding
 // Forked from https://github.com/cryptocoinjs/bs58
 // Originally written by Mike Hearn for BitcoinJ
@@ -281,14 +281,19 @@ module.exports = function (params, cb) {
 // Merged Buffer refactorings from base58-native by Stephen Pair
 // Copyright (c) 2013 BitPay Inc
 
+var Buffer = require('safe-buffer').Buffer
+
 module.exports = function base (ALPHABET) {
   var ALPHABET_MAP = {}
   var BASE = ALPHABET.length
   var LEADER = ALPHABET.charAt(0)
 
   // pre-compute lookup table
-  for (var i = 0; i < ALPHABET.length; i++) {
-    ALPHABET_MAP[ALPHABET.charAt(i)] = i
+  for (var z = 0; z < ALPHABET.length; z++) {
+    var x = ALPHABET.charAt(z)
+
+    if (ALPHABET_MAP[x] !== undefined) throw new TypeError(x + ' is ambiguous')
+    ALPHABET_MAP[x] = z
   }
 
   function encode (source) {
@@ -308,28 +313,23 @@ module.exports = function base (ALPHABET) {
       }
     }
 
+    var string = ''
+
     // deal with leading zeros
-    for (var k = 0; source[k] === 0 && k < source.length - 1; ++k) {
-      digits.push(0)
-    }
-
+    for (var k = 0; source[k] === 0 && k < source.length - 1; ++k) string += ALPHABET[0]
     // convert digits to a string
-    for (var ii = 0, jj = digits.length - 1; ii <= jj; ++ii, --jj) {
-      var tmp = ALPHABET[digits[ii]]
-      digits[ii] = ALPHABET[digits[jj]]
-      digits[jj] = tmp
-    }
+    for (var q = digits.length - 1; q >= 0; --q) string += ALPHABET[digits[q]]
 
-    return digits.join('')
+    return string
   }
 
-  function decode (string) {
-    if (string.length === 0) return []
+  function decodeUnsafe (string) {
+    if (string.length === 0) return Buffer.allocUnsafe(0)
 
     var bytes = [0]
     for (var i = 0; i < string.length; i++) {
       var value = ALPHABET_MAP[string[i]]
-      if (value === undefined) throw new Error('Non-base' + BASE + ' character')
+      if (value === undefined) return
 
       for (var j = 0, carry = value; j < bytes.length; ++j) {
         carry += bytes[j] * BASE
@@ -348,16 +348,24 @@ module.exports = function base (ALPHABET) {
       bytes.push(0)
     }
 
-    return bytes.reverse()
+    return Buffer.from(bytes.reverse())
+  }
+
+  function decode (string) {
+    var buffer = decodeUnsafe(string)
+    if (buffer) return buffer
+
+    throw new Error('Non-base' + BASE + ' character')
   }
 
   return {
     encode: encode,
+    decodeUnsafe: decodeUnsafe,
     decode: decode
   }
 }
 
-},{}],8:[function(require,module,exports){
+},{"safe-buffer":78}],8:[function(require,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -393,22 +401,22 @@ function placeHoldersCount (b64) {
 
 function byteLength (b64) {
   // base64 is 4/3 + up to two characters of the original data
-  return b64.length * 3 / 4 - placeHoldersCount(b64)
+  return (b64.length * 3 / 4) - placeHoldersCount(b64)
 }
 
 function toByteArray (b64) {
-  var i, j, l, tmp, placeHolders, arr
+  var i, l, tmp, placeHolders, arr
   var len = b64.length
   placeHolders = placeHoldersCount(b64)
 
-  arr = new Arr(len * 3 / 4 - placeHolders)
+  arr = new Arr((len * 3 / 4) - placeHolders)
 
   // if there are placeholders, only get up to the last complete 4 chars
   l = placeHolders > 0 ? len - 4 : len
 
   var L = 0
 
-  for (i = 0, j = 0; i < l; i += 4, j += 3) {
+  for (i = 0; i < l; i += 4) {
     tmp = (revLookup[b64.charCodeAt(i)] << 18) | (revLookup[b64.charCodeAt(i + 1)] << 12) | (revLookup[b64.charCodeAt(i + 2)] << 6) | revLookup[b64.charCodeAt(i + 3)]
     arr[L++] = (tmp >> 16) & 0xFF
     arr[L++] = (tmp >> 8) & 0xFF
@@ -478,17 +486,6 @@ function fromByteArray (uint8) {
 },{}],10:[function(require,module,exports){
 arguments[4][9][0].apply(exports,arguments)
 },{"dup":9}],11:[function(require,module,exports){
-var basex = require('base-x')
-var ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-var base58 = basex(ALPHABET)
-
-module.exports = {
-  encode: base58.encode,
-  decode: base58.decode
-}
-
-},{"base-x":7}],12:[function(require,module,exports){
-(function (global){
 /*!
  * The buffer module from node.js, for the browser.
  *
@@ -501,80 +498,57 @@ module.exports = {
 
 var base64 = require('base64-js')
 var ieee754 = require('ieee754')
-var isArray = require('isarray')
 
 exports.Buffer = Buffer
 exports.SlowBuffer = SlowBuffer
 exports.INSPECT_MAX_BYTES = 50
 
+var K_MAX_LENGTH = 0x7fffffff
+exports.kMaxLength = K_MAX_LENGTH
+
 /**
  * If `Buffer.TYPED_ARRAY_SUPPORT`:
  *   === true    Use Uint8Array implementation (fastest)
- *   === false   Use Object implementation (most compatible, even IE6)
+ *   === false   Print warning and recommend using `buffer` v4.x which has an Object
+ *               implementation (most compatible, even IE6)
  *
  * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
  * Opera 11.6+, iOS 4.2+.
  *
- * Due to various browser bugs, sometimes the Object implementation will be used even
- * when the browser supports typed arrays.
- *
- * Note:
- *
- *   - Firefox 4-29 lacks support for adding new properties to `Uint8Array` instances,
- *     See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438.
- *
- *   - Chrome 9-10 is missing the `TypedArray.prototype.subarray` function.
- *
- *   - IE10 has a broken `TypedArray.prototype.subarray` function which returns arrays of
- *     incorrect length in some situations.
-
- * We detect these buggy browsers and set `Buffer.TYPED_ARRAY_SUPPORT` to `false` so they
- * get the Object implementation, which is slower but behaves correctly.
+ * We report that the browser does not support typed arrays if the are not subclassable
+ * using __proto__. Firefox 4-29 lacks support for adding new properties to `Uint8Array`
+ * (See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438). IE 10 lacks support
+ * for __proto__ and has a buggy typed array implementation.
  */
-Buffer.TYPED_ARRAY_SUPPORT = global.TYPED_ARRAY_SUPPORT !== undefined
-  ? global.TYPED_ARRAY_SUPPORT
-  : typedArraySupport()
+Buffer.TYPED_ARRAY_SUPPORT = typedArraySupport()
 
-/*
- * Export kMaxLength after typed array support is determined.
- */
-exports.kMaxLength = kMaxLength()
+if (!Buffer.TYPED_ARRAY_SUPPORT && typeof console !== 'undefined' &&
+    typeof console.error === 'function') {
+  console.error(
+    'This browser lacks typed array (Uint8Array) support which is required by ' +
+    '`buffer` v5.x. Use `buffer` v4.x if you require old browser support.'
+  )
+}
 
 function typedArraySupport () {
+  // Can typed array instances can be augmented?
   try {
     var arr = new Uint8Array(1)
     arr.__proto__ = {__proto__: Uint8Array.prototype, foo: function () { return 42 }}
-    return arr.foo() === 42 && // typed array instances can be augmented
-        typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
-        arr.subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
+    return arr.foo() === 42
   } catch (e) {
     return false
   }
 }
 
-function kMaxLength () {
-  return Buffer.TYPED_ARRAY_SUPPORT
-    ? 0x7fffffff
-    : 0x3fffffff
-}
-
-function createBuffer (that, length) {
-  if (kMaxLength() < length) {
+function createBuffer (length) {
+  if (length > K_MAX_LENGTH) {
     throw new RangeError('Invalid typed array length')
   }
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    // Return an augmented `Uint8Array` instance, for best performance
-    that = new Uint8Array(length)
-    that.__proto__ = Buffer.prototype
-  } else {
-    // Fallback: Return an object instance of the Buffer class
-    if (that === null) {
-      that = new Buffer(length)
-    }
-    that.length = length
-  }
-
-  return that
+  // Return an augmented `Uint8Array` instance
+  var buf = new Uint8Array(length)
+  buf.__proto__ = Buffer.prototype
+  return buf
 }
 
 /**
@@ -588,10 +562,6 @@ function createBuffer (that, length) {
  */
 
 function Buffer (arg, encodingOrOffset, length) {
-  if (!Buffer.TYPED_ARRAY_SUPPORT && !(this instanceof Buffer)) {
-    return new Buffer(arg, encodingOrOffset, length)
-  }
-
   // Common case.
   if (typeof arg === 'number') {
     if (typeof encodingOrOffset === 'string') {
@@ -599,33 +569,38 @@ function Buffer (arg, encodingOrOffset, length) {
         'If encoding is specified then the first argument must be a string'
       )
     }
-    return allocUnsafe(this, arg)
+    return allocUnsafe(arg)
   }
-  return from(this, arg, encodingOrOffset, length)
+  return from(arg, encodingOrOffset, length)
+}
+
+// Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97
+if (typeof Symbol !== 'undefined' && Symbol.species &&
+    Buffer[Symbol.species] === Buffer) {
+  Object.defineProperty(Buffer, Symbol.species, {
+    value: null,
+    configurable: true,
+    enumerable: false,
+    writable: false
+  })
 }
 
 Buffer.poolSize = 8192 // not used by this implementation
 
-// TODO: Legacy, not needed anymore. Remove in next major version.
-Buffer._augment = function (arr) {
-  arr.__proto__ = Buffer.prototype
-  return arr
-}
-
-function from (that, value, encodingOrOffset, length) {
+function from (value, encodingOrOffset, length) {
   if (typeof value === 'number') {
     throw new TypeError('"value" argument must not be a number')
   }
 
-  if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer) {
-    return fromArrayBuffer(that, value, encodingOrOffset, length)
+  if (isArrayBuffer(value)) {
+    return fromArrayBuffer(value, encodingOrOffset, length)
   }
 
   if (typeof value === 'string') {
-    return fromString(that, value, encodingOrOffset)
+    return fromString(value, encodingOrOffset)
   }
 
-  return fromObject(that, value)
+  return fromObject(value)
 }
 
 /**
@@ -637,21 +612,13 @@ function from (that, value, encodingOrOffset, length) {
  * Buffer.from(arrayBuffer[, byteOffset[, length]])
  **/
 Buffer.from = function (value, encodingOrOffset, length) {
-  return from(null, value, encodingOrOffset, length)
+  return from(value, encodingOrOffset, length)
 }
 
-if (Buffer.TYPED_ARRAY_SUPPORT) {
-  Buffer.prototype.__proto__ = Uint8Array.prototype
-  Buffer.__proto__ = Uint8Array
-  if (typeof Symbol !== 'undefined' && Symbol.species &&
-      Buffer[Symbol.species] === Buffer) {
-    // Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97
-    Object.defineProperty(Buffer, Symbol.species, {
-      value: null,
-      configurable: true
-    })
-  }
-}
+// Note: Change prototype *after* Buffer.from is defined to workaround Chrome bug:
+// https://github.com/feross/buffer/pull/148
+Buffer.prototype.__proto__ = Uint8Array.prototype
+Buffer.__proto__ = Uint8Array
 
 function assertSize (size) {
   if (typeof size !== 'number') {
@@ -661,20 +628,20 @@ function assertSize (size) {
   }
 }
 
-function alloc (that, size, fill, encoding) {
+function alloc (size, fill, encoding) {
   assertSize(size)
   if (size <= 0) {
-    return createBuffer(that, size)
+    return createBuffer(size)
   }
   if (fill !== undefined) {
     // Only pay attention to encoding if it's a string. This
     // prevents accidentally sending in a number that would
     // be interpretted as a start offset.
     return typeof encoding === 'string'
-      ? createBuffer(that, size).fill(fill, encoding)
-      : createBuffer(that, size).fill(fill)
+      ? createBuffer(size).fill(fill, encoding)
+      : createBuffer(size).fill(fill)
   }
-  return createBuffer(that, size)
+  return createBuffer(size)
 }
 
 /**
@@ -682,34 +649,28 @@ function alloc (that, size, fill, encoding) {
  * alloc(size[, fill[, encoding]])
  **/
 Buffer.alloc = function (size, fill, encoding) {
-  return alloc(null, size, fill, encoding)
+  return alloc(size, fill, encoding)
 }
 
-function allocUnsafe (that, size) {
+function allocUnsafe (size) {
   assertSize(size)
-  that = createBuffer(that, size < 0 ? 0 : checked(size) | 0)
-  if (!Buffer.TYPED_ARRAY_SUPPORT) {
-    for (var i = 0; i < size; ++i) {
-      that[i] = 0
-    }
-  }
-  return that
+  return createBuffer(size < 0 ? 0 : checked(size) | 0)
 }
 
 /**
  * Equivalent to Buffer(num), by default creates a non-zero-filled Buffer instance.
  * */
 Buffer.allocUnsafe = function (size) {
-  return allocUnsafe(null, size)
+  return allocUnsafe(size)
 }
 /**
  * Equivalent to SlowBuffer(num), by default creates a non-zero-filled Buffer instance.
  */
 Buffer.allocUnsafeSlow = function (size) {
-  return allocUnsafe(null, size)
+  return allocUnsafe(size)
 }
 
-function fromString (that, string, encoding) {
+function fromString (string, encoding) {
   if (typeof encoding !== 'string' || encoding === '') {
     encoding = 'utf8'
   }
@@ -719,32 +680,30 @@ function fromString (that, string, encoding) {
   }
 
   var length = byteLength(string, encoding) | 0
-  that = createBuffer(that, length)
+  var buf = createBuffer(length)
 
-  var actual = that.write(string, encoding)
+  var actual = buf.write(string, encoding)
 
   if (actual !== length) {
     // Writing a hex string, for example, that contains invalid characters will
     // cause everything after the first invalid character to be ignored. (e.g.
     // 'abxxcd' will be treated as 'ab')
-    that = that.slice(0, actual)
+    buf = buf.slice(0, actual)
   }
 
-  return that
+  return buf
 }
 
-function fromArrayLike (that, array) {
+function fromArrayLike (array) {
   var length = array.length < 0 ? 0 : checked(array.length) | 0
-  that = createBuffer(that, length)
+  var buf = createBuffer(length)
   for (var i = 0; i < length; i += 1) {
-    that[i] = array[i] & 255
+    buf[i] = array[i] & 255
   }
-  return that
+  return buf
 }
 
-function fromArrayBuffer (that, array, byteOffset, length) {
-  array.byteLength // this throws if `array` is not a valid ArrayBuffer
-
+function fromArrayBuffer (array, byteOffset, length) {
   if (byteOffset < 0 || array.byteLength < byteOffset) {
     throw new RangeError('\'offset\' is out of bounds')
   }
@@ -753,49 +712,43 @@ function fromArrayBuffer (that, array, byteOffset, length) {
     throw new RangeError('\'length\' is out of bounds')
   }
 
+  var buf
   if (byteOffset === undefined && length === undefined) {
-    array = new Uint8Array(array)
+    buf = new Uint8Array(array)
   } else if (length === undefined) {
-    array = new Uint8Array(array, byteOffset)
+    buf = new Uint8Array(array, byteOffset)
   } else {
-    array = new Uint8Array(array, byteOffset, length)
+    buf = new Uint8Array(array, byteOffset, length)
   }
 
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    // Return an augmented `Uint8Array` instance, for best performance
-    that = array
-    that.__proto__ = Buffer.prototype
-  } else {
-    // Fallback: Return an object instance of the Buffer class
-    that = fromArrayLike(that, array)
-  }
-  return that
+  // Return an augmented `Uint8Array` instance
+  buf.__proto__ = Buffer.prototype
+  return buf
 }
 
-function fromObject (that, obj) {
+function fromObject (obj) {
   if (Buffer.isBuffer(obj)) {
     var len = checked(obj.length) | 0
-    that = createBuffer(that, len)
+    var buf = createBuffer(len)
 
-    if (that.length === 0) {
-      return that
+    if (buf.length === 0) {
+      return buf
     }
 
-    obj.copy(that, 0, 0, len)
-    return that
+    obj.copy(buf, 0, 0, len)
+    return buf
   }
 
   if (obj) {
-    if ((typeof ArrayBuffer !== 'undefined' &&
-        obj.buffer instanceof ArrayBuffer) || 'length' in obj) {
-      if (typeof obj.length !== 'number' || isnan(obj.length)) {
-        return createBuffer(that, 0)
+    if (isArrayBufferView(obj) || 'length' in obj) {
+      if (typeof obj.length !== 'number' || numberIsNaN(obj.length)) {
+        return createBuffer(0)
       }
-      return fromArrayLike(that, obj)
+      return fromArrayLike(obj)
     }
 
-    if (obj.type === 'Buffer' && isArray(obj.data)) {
-      return fromArrayLike(that, obj.data)
+    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+      return fromArrayLike(obj.data)
     }
   }
 
@@ -803,11 +756,11 @@ function fromObject (that, obj) {
 }
 
 function checked (length) {
-  // Note: cannot use `length < kMaxLength()` here because that fails when
+  // Note: cannot use `length < K_MAX_LENGTH` here because that fails when
   // length is NaN (which is otherwise coerced to zero.)
-  if (length >= kMaxLength()) {
+  if (length >= K_MAX_LENGTH) {
     throw new RangeError('Attempt to allocate Buffer larger than maximum ' +
-                         'size: 0x' + kMaxLength().toString(16) + ' bytes')
+                         'size: 0x' + K_MAX_LENGTH.toString(16) + ' bytes')
   }
   return length | 0
 }
@@ -820,7 +773,7 @@ function SlowBuffer (length) {
 }
 
 Buffer.isBuffer = function isBuffer (b) {
-  return !!(b != null && b._isBuffer)
+  return b != null && b._isBuffer === true
 }
 
 Buffer.compare = function compare (a, b) {
@@ -866,7 +819,7 @@ Buffer.isEncoding = function isEncoding (encoding) {
 }
 
 Buffer.concat = function concat (list, length) {
-  if (!isArray(list)) {
+  if (!Array.isArray(list)) {
     throw new TypeError('"list" argument must be an Array of Buffers')
   }
 
@@ -899,8 +852,7 @@ function byteLength (string, encoding) {
   if (Buffer.isBuffer(string)) {
     return string.length
   }
-  if (typeof ArrayBuffer !== 'undefined' && typeof ArrayBuffer.isView === 'function' &&
-      (ArrayBuffer.isView(string) || string instanceof ArrayBuffer)) {
+  if (isArrayBufferView(string) || isArrayBuffer(string)) {
     return string.byteLength
   }
   if (typeof string !== 'string') {
@@ -1010,8 +962,12 @@ function slowToString (encoding, start, end) {
   }
 }
 
-// The property is used by `Buffer.isBuffer` and `is-buffer` (in Safari 5-7) to detect
-// Buffer instances.
+// This property is used by `Buffer.isBuffer` (and the `is-buffer` npm package)
+// to detect a Buffer instance. It's not possible to use `instanceof Buffer`
+// reliably in a browserify context because there could be multiple different
+// copies of the 'buffer' package in use. This method works even for Buffer
+// instances that were created from another copy of the `buffer` package.
+// See: https://github.com/feross/buffer/issues/154
 Buffer.prototype._isBuffer = true
 
 function swap (b, n, m) {
@@ -1058,7 +1014,7 @@ Buffer.prototype.swap64 = function swap64 () {
 }
 
 Buffer.prototype.toString = function toString () {
-  var length = this.length | 0
+  var length = this.length
   if (length === 0) return ''
   if (arguments.length === 0) return utf8Slice(this, 0, length)
   return slowToString.apply(this, arguments)
@@ -1162,7 +1118,7 @@ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
     byteOffset = -0x80000000
   }
   byteOffset = +byteOffset  // Coerce to Number.
-  if (isNaN(byteOffset)) {
+  if (numberIsNaN(byteOffset)) {
     // byteOffset: it it's undefined, null, NaN, "foo", etc, search whole buffer
     byteOffset = dir ? 0 : (buffer.length - 1)
   }
@@ -1191,8 +1147,7 @@ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
     return arrayIndexOf(buffer, val, byteOffset, encoding, dir)
   } else if (typeof val === 'number') {
     val = val & 0xFF // Search for a byte value [0-255]
-    if (Buffer.TYPED_ARRAY_SUPPORT &&
-        typeof Uint8Array.prototype.indexOf === 'function') {
+    if (typeof Uint8Array.prototype.indexOf === 'function') {
       if (dir) {
         return Uint8Array.prototype.indexOf.call(buffer, val, byteOffset)
       } else {
@@ -1294,7 +1249,7 @@ function hexWrite (buf, string, offset, length) {
   }
   for (var i = 0; i < length; ++i) {
     var parsed = parseInt(string.substr(i * 2, 2), 16)
-    if (isNaN(parsed)) return i
+    if (numberIsNaN(parsed)) return i
     buf[offset + i] = parsed
   }
   return i
@@ -1333,15 +1288,14 @@ Buffer.prototype.write = function write (string, offset, length, encoding) {
     offset = 0
   // Buffer#write(string, offset[, length][, encoding])
   } else if (isFinite(offset)) {
-    offset = offset | 0
+    offset = offset >>> 0
     if (isFinite(length)) {
-      length = length | 0
+      length = length >>> 0
       if (encoding === undefined) encoding = 'utf8'
     } else {
       encoding = length
       length = undefined
     }
-  // legacy write(string, encoding, offset, length) - remove in v0.13
   } else {
     throw new Error(
       'Buffer.write(string, encoding, offset[, length]) is no longer supported'
@@ -1540,7 +1494,7 @@ function utf16leSlice (buf, start, end) {
   var bytes = buf.slice(start, end)
   var res = ''
   for (var i = 0; i < bytes.length; i += 2) {
-    res += String.fromCharCode(bytes[i] + bytes[i + 1] * 256)
+    res += String.fromCharCode(bytes[i] + (bytes[i + 1] * 256))
   }
   return res
 }
@@ -1566,18 +1520,9 @@ Buffer.prototype.slice = function slice (start, end) {
 
   if (end < start) end = start
 
-  var newBuf
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    newBuf = this.subarray(start, end)
-    newBuf.__proto__ = Buffer.prototype
-  } else {
-    var sliceLen = end - start
-    newBuf = new Buffer(sliceLen, undefined)
-    for (var i = 0; i < sliceLen; ++i) {
-      newBuf[i] = this[i + start]
-    }
-  }
-
+  var newBuf = this.subarray(start, end)
+  // Return an augmented `Uint8Array` instance
+  newBuf.__proto__ = Buffer.prototype
   return newBuf
 }
 
@@ -1590,8 +1535,8 @@ function checkOffset (offset, ext, length) {
 }
 
 Buffer.prototype.readUIntLE = function readUIntLE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) checkOffset(offset, byteLength, this.length)
 
   var val = this[offset]
@@ -1605,8 +1550,8 @@ Buffer.prototype.readUIntLE = function readUIntLE (offset, byteLength, noAssert)
 }
 
 Buffer.prototype.readUIntBE = function readUIntBE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) {
     checkOffset(offset, byteLength, this.length)
   }
@@ -1621,21 +1566,25 @@ Buffer.prototype.readUIntBE = function readUIntBE (offset, byteLength, noAssert)
 }
 
 Buffer.prototype.readUInt8 = function readUInt8 (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 1, this.length)
   return this[offset]
 }
 
 Buffer.prototype.readUInt16LE = function readUInt16LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   return this[offset] | (this[offset + 1] << 8)
 }
 
 Buffer.prototype.readUInt16BE = function readUInt16BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   return (this[offset] << 8) | this[offset + 1]
 }
 
 Buffer.prototype.readUInt32LE = function readUInt32LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return ((this[offset]) |
@@ -1645,6 +1594,7 @@ Buffer.prototype.readUInt32LE = function readUInt32LE (offset, noAssert) {
 }
 
 Buffer.prototype.readUInt32BE = function readUInt32BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return (this[offset] * 0x1000000) +
@@ -1654,8 +1604,8 @@ Buffer.prototype.readUInt32BE = function readUInt32BE (offset, noAssert) {
 }
 
 Buffer.prototype.readIntLE = function readIntLE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) checkOffset(offset, byteLength, this.length)
 
   var val = this[offset]
@@ -1672,8 +1622,8 @@ Buffer.prototype.readIntLE = function readIntLE (offset, byteLength, noAssert) {
 }
 
 Buffer.prototype.readIntBE = function readIntBE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) checkOffset(offset, byteLength, this.length)
 
   var i = byteLength
@@ -1690,24 +1640,28 @@ Buffer.prototype.readIntBE = function readIntBE (offset, byteLength, noAssert) {
 }
 
 Buffer.prototype.readInt8 = function readInt8 (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 1, this.length)
   if (!(this[offset] & 0x80)) return (this[offset])
   return ((0xff - this[offset] + 1) * -1)
 }
 
 Buffer.prototype.readInt16LE = function readInt16LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   var val = this[offset] | (this[offset + 1] << 8)
   return (val & 0x8000) ? val | 0xFFFF0000 : val
 }
 
 Buffer.prototype.readInt16BE = function readInt16BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   var val = this[offset + 1] | (this[offset] << 8)
   return (val & 0x8000) ? val | 0xFFFF0000 : val
 }
 
 Buffer.prototype.readInt32LE = function readInt32LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return (this[offset]) |
@@ -1717,6 +1671,7 @@ Buffer.prototype.readInt32LE = function readInt32LE (offset, noAssert) {
 }
 
 Buffer.prototype.readInt32BE = function readInt32BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return (this[offset] << 24) |
@@ -1726,21 +1681,25 @@ Buffer.prototype.readInt32BE = function readInt32BE (offset, noAssert) {
 }
 
 Buffer.prototype.readFloatLE = function readFloatLE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
   return ieee754.read(this, offset, true, 23, 4)
 }
 
 Buffer.prototype.readFloatBE = function readFloatBE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
   return ieee754.read(this, offset, false, 23, 4)
 }
 
 Buffer.prototype.readDoubleLE = function readDoubleLE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 8, this.length)
   return ieee754.read(this, offset, true, 52, 8)
 }
 
 Buffer.prototype.readDoubleBE = function readDoubleBE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 8, this.length)
   return ieee754.read(this, offset, false, 52, 8)
 }
@@ -1753,8 +1712,8 @@ function checkInt (buf, value, offset, ext, max, min) {
 
 Buffer.prototype.writeUIntLE = function writeUIntLE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) {
     var maxBytes = Math.pow(2, 8 * byteLength) - 1
     checkInt(this, value, offset, byteLength, maxBytes, 0)
@@ -1772,8 +1731,8 @@ Buffer.prototype.writeUIntLE = function writeUIntLE (value, offset, byteLength, 
 
 Buffer.prototype.writeUIntBE = function writeUIntBE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) {
     var maxBytes = Math.pow(2, 8 * byteLength) - 1
     checkInt(this, value, offset, byteLength, maxBytes, 0)
@@ -1791,89 +1750,57 @@ Buffer.prototype.writeUIntBE = function writeUIntBE (value, offset, byteLength, 
 
 Buffer.prototype.writeUInt8 = function writeUInt8 (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 1, 0xff, 0)
-  if (!Buffer.TYPED_ARRAY_SUPPORT) value = Math.floor(value)
   this[offset] = (value & 0xff)
   return offset + 1
 }
 
-function objectWriteUInt16 (buf, value, offset, littleEndian) {
-  if (value < 0) value = 0xffff + value + 1
-  for (var i = 0, j = Math.min(buf.length - offset, 2); i < j; ++i) {
-    buf[offset + i] = (value & (0xff << (8 * (littleEndian ? i : 1 - i)))) >>>
-      (littleEndian ? i : 1 - i) * 8
-  }
-}
-
 Buffer.prototype.writeUInt16LE = function writeUInt16LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0xffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value & 0xff)
-    this[offset + 1] = (value >>> 8)
-  } else {
-    objectWriteUInt16(this, value, offset, true)
-  }
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
   return offset + 2
 }
 
 Buffer.prototype.writeUInt16BE = function writeUInt16BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0xffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 8)
-    this[offset + 1] = (value & 0xff)
-  } else {
-    objectWriteUInt16(this, value, offset, false)
-  }
+  this[offset] = (value >>> 8)
+  this[offset + 1] = (value & 0xff)
   return offset + 2
-}
-
-function objectWriteUInt32 (buf, value, offset, littleEndian) {
-  if (value < 0) value = 0xffffffff + value + 1
-  for (var i = 0, j = Math.min(buf.length - offset, 4); i < j; ++i) {
-    buf[offset + i] = (value >>> (littleEndian ? i : 3 - i) * 8) & 0xff
-  }
 }
 
 Buffer.prototype.writeUInt32LE = function writeUInt32LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0xffffffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset + 3] = (value >>> 24)
-    this[offset + 2] = (value >>> 16)
-    this[offset + 1] = (value >>> 8)
-    this[offset] = (value & 0xff)
-  } else {
-    objectWriteUInt32(this, value, offset, true)
-  }
+  this[offset + 3] = (value >>> 24)
+  this[offset + 2] = (value >>> 16)
+  this[offset + 1] = (value >>> 8)
+  this[offset] = (value & 0xff)
   return offset + 4
 }
 
 Buffer.prototype.writeUInt32BE = function writeUInt32BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0xffffffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 24)
-    this[offset + 1] = (value >>> 16)
-    this[offset + 2] = (value >>> 8)
-    this[offset + 3] = (value & 0xff)
-  } else {
-    objectWriteUInt32(this, value, offset, false)
-  }
+  this[offset] = (value >>> 24)
+  this[offset + 1] = (value >>> 16)
+  this[offset + 2] = (value >>> 8)
+  this[offset + 3] = (value & 0xff)
   return offset + 4
 }
 
 Buffer.prototype.writeIntLE = function writeIntLE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) {
-    var limit = Math.pow(2, 8 * byteLength - 1)
+    var limit = Math.pow(2, (8 * byteLength) - 1)
 
     checkInt(this, value, offset, byteLength, limit - 1, -limit)
   }
@@ -1894,9 +1821,9 @@ Buffer.prototype.writeIntLE = function writeIntLE (value, offset, byteLength, no
 
 Buffer.prototype.writeIntBE = function writeIntBE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) {
-    var limit = Math.pow(2, 8 * byteLength - 1)
+    var limit = Math.pow(2, (8 * byteLength) - 1)
 
     checkInt(this, value, offset, byteLength, limit - 1, -limit)
   }
@@ -1917,9 +1844,8 @@ Buffer.prototype.writeIntBE = function writeIntBE (value, offset, byteLength, no
 
 Buffer.prototype.writeInt8 = function writeInt8 (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 1, 0x7f, -0x80)
-  if (!Buffer.TYPED_ARRAY_SUPPORT) value = Math.floor(value)
   if (value < 0) value = 0xff + value + 1
   this[offset] = (value & 0xff)
   return offset + 1
@@ -1927,58 +1853,42 @@ Buffer.prototype.writeInt8 = function writeInt8 (value, offset, noAssert) {
 
 Buffer.prototype.writeInt16LE = function writeInt16LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0x7fff, -0x8000)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value & 0xff)
-    this[offset + 1] = (value >>> 8)
-  } else {
-    objectWriteUInt16(this, value, offset, true)
-  }
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
   return offset + 2
 }
 
 Buffer.prototype.writeInt16BE = function writeInt16BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0x7fff, -0x8000)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 8)
-    this[offset + 1] = (value & 0xff)
-  } else {
-    objectWriteUInt16(this, value, offset, false)
-  }
+  this[offset] = (value >>> 8)
+  this[offset + 1] = (value & 0xff)
   return offset + 2
 }
 
 Buffer.prototype.writeInt32LE = function writeInt32LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0x7fffffff, -0x80000000)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value & 0xff)
-    this[offset + 1] = (value >>> 8)
-    this[offset + 2] = (value >>> 16)
-    this[offset + 3] = (value >>> 24)
-  } else {
-    objectWriteUInt32(this, value, offset, true)
-  }
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
+  this[offset + 2] = (value >>> 16)
+  this[offset + 3] = (value >>> 24)
   return offset + 4
 }
 
 Buffer.prototype.writeInt32BE = function writeInt32BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0x7fffffff, -0x80000000)
   if (value < 0) value = 0xffffffff + value + 1
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 24)
-    this[offset + 1] = (value >>> 16)
-    this[offset + 2] = (value >>> 8)
-    this[offset + 3] = (value & 0xff)
-  } else {
-    objectWriteUInt32(this, value, offset, false)
-  }
+  this[offset] = (value >>> 24)
+  this[offset + 1] = (value >>> 16)
+  this[offset + 2] = (value >>> 8)
+  this[offset + 3] = (value & 0xff)
   return offset + 4
 }
 
@@ -1988,6 +1898,8 @@ function checkIEEE754 (buf, value, offset, ext, max, min) {
 }
 
 function writeFloat (buf, value, offset, littleEndian, noAssert) {
+  value = +value
+  offset = offset >>> 0
   if (!noAssert) {
     checkIEEE754(buf, value, offset, 4, 3.4028234663852886e+38, -3.4028234663852886e+38)
   }
@@ -2004,6 +1916,8 @@ Buffer.prototype.writeFloatBE = function writeFloatBE (value, offset, noAssert) 
 }
 
 function writeDouble (buf, value, offset, littleEndian, noAssert) {
+  value = +value
+  offset = offset >>> 0
   if (!noAssert) {
     checkIEEE754(buf, value, offset, 8, 1.7976931348623157E+308, -1.7976931348623157E+308)
   }
@@ -2052,7 +1966,7 @@ Buffer.prototype.copy = function copy (target, targetStart, start, end) {
     for (i = len - 1; i >= 0; --i) {
       target[i + targetStart] = this[i + start]
     }
-  } else if (len < 1000 || !Buffer.TYPED_ARRAY_SUPPORT) {
+  } else if (len < 1000) {
     // ascending copy from start
     for (i = 0; i < len; ++i) {
       target[i + targetStart] = this[i + start]
@@ -2121,7 +2035,7 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
   } else {
     var bytes = Buffer.isBuffer(val)
       ? val
-      : utf8ToBytes(new Buffer(val, encoding).toString())
+      : new Buffer(val, encoding)
     var len = bytes.length
     for (i = 0; i < end - start; ++i) {
       this[i + start] = bytes[i % len]
@@ -2134,11 +2048,11 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
 // HELPER FUNCTIONS
 // ================
 
-var INVALID_BASE64_RE = /[^+\/0-9A-Za-z-_]/g
+var INVALID_BASE64_RE = /[^+/0-9A-Za-z-_]/g
 
 function base64clean (str) {
   // Node strips out invalid characters like \n and \t from the string, base64-js does not
-  str = stringtrim(str).replace(INVALID_BASE64_RE, '')
+  str = str.trim().replace(INVALID_BASE64_RE, '')
   // Node converts strings with length < 2 to ''
   if (str.length < 2) return ''
   // Node allows for non-padded base64 strings (missing trailing ===), base64-js does not
@@ -2146,11 +2060,6 @@ function base64clean (str) {
     str = str + '='
   }
   return str
-}
-
-function stringtrim (str) {
-  if (str.trim) return str.trim()
-  return str.replace(/^\s+|\s+$/g, '')
 }
 
 function toHex (n) {
@@ -2275,61 +2184,78 @@ function blitBuffer (src, dst, offset, length) {
   return i
 }
 
-function isnan (val) {
-  return val !== val // eslint-disable-line no-self-compare
+// ArrayBuffers from another context (i.e. an iframe) do not pass the `instanceof` check
+// but they should be treated as valid. See: https://github.com/feross/buffer/issues/166
+function isArrayBuffer (obj) {
+  return obj instanceof ArrayBuffer ||
+    (obj != null && obj.constructor != null && obj.constructor.name === 'ArrayBuffer' &&
+      typeof obj.byteLength === 'number')
 }
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":8,"ieee754":17,"isarray":22}],13:[function(require,module,exports){
+// Node 0.10 supports `ArrayBuffer` but lacks `ArrayBuffer.isView`
+function isArrayBufferView (obj) {
+  return (typeof ArrayBuffer.isView === 'function') && ArrayBuffer.isView(obj)
+}
+
+function numberIsNaN (obj) {
+  return obj !== obj // eslint-disable-line no-self-compare
+}
+
+},{"base64-js":8,"ieee754":17}],12:[function(require,module,exports){
+var basex = require('base-x')
+var ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+module.exports = basex(ALPHABET)
+
+},{"base-x":7}],13:[function(require,module,exports){
 var _require = require //fool browserify
-module.exports = _require('sodium-prebuilt/build/Release/sodium')
+module.exports =
+  _require('sodium-chloride')(_require('sodium-native'))
+
 
 },{}],14:[function(require,module,exports){
 
 module.exports = require('sodium-browserify-tweetnacl')
 
-},{"sodium-browserify-tweetnacl":85}],15:[function(require,module,exports){
+},{"sodium-browserify-tweetnacl":83}],15:[function(require,module,exports){
 (function (process,Buffer){
 var isElectron = require('is-electron')
 
-if(process.env.CHLORIDE_JS)
-  return module.exports = require('./browser-small')
-
-try {
-  var cl = module.exports = require('./bindings')
-
-  if(isElectron()) {
-    //there is a weird problem with electro.
-    //where detached signatures do not work, but other
-    //signatures do...
-
-    var keys = cl.crypto_sign_keypair()
-    var msg = cl.crypto_hash(new Buffer('test signature'))
-    var sig = cl.crypto_sign_detached(msg, keys.secretKey)
-
-    if(cl.crypto_sign_verify_detached(sig, msg, keys.publicKey))
-      return
-
-    console.error('detached signatures broken in electron, using workaround')
-
-    var verify = module.exports.crypto_sign_verify_detached
-    module.exports.crypto_sign_verify_detached = function (sig, msg, pk) {
-      //return verify(copy(sig), copy(msg), copy(pk))
-      return module.exports.crypto_sign_open(Buffer.concat([sig, msg]), pk)
-      //console.log(sig, msg, pk)
-//      return verify(new Buffer(sig), new Buffer(msg), new Buffer(pk))
-    }
-  }
-} catch (err) {
-  console.error('error loading sodium bindings:', err.message)
-  console.error('falling back to javascript version.')
+if(process.env.CHLORIDE_JS) {
   module.exports = require('./browser-small')
+} else {
+  try {
+    var cl = module.exports = require('./bindings')
+
+    if(isElectron()) {
+      //there is a weird problem with electro.
+      //where detached signatures do not work, but other
+      //signatures do...
+
+      var keys = cl.crypto_sign_keypair()
+      var msg = cl.crypto_hash(new Buffer('test signature'))
+      var sig = cl.crypto_sign_detached(msg, keys.secretKey)
+
+      if(!cl.crypto_sign_verify_detached(sig, msg, keys.publicKey)) {
+        console.error('detached signatures broken in electron, using workaround')
+
+        var verify = module.exports.crypto_sign_verify_detached
+        module.exports.crypto_sign_verify_detached = function (sig, msg, pk) {
+          return module.exports.crypto_sign_open(Buffer.concat([sig, msg]), pk)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('error loading sodium bindings:', err.message)
+    console.error('falling back to javascript version.')
+    module.exports = require('./browser-small')
+  }
 }
 
 
 
 }).call(this,require('_process'),require("buffer").Buffer)
-},{"./bindings":13,"./browser-small":14,"_process":27,"buffer":12,"is-electron":21}],16:[function(require,module,exports){
+},{"./bindings":13,"./browser-small":14,"_process":26,"buffer":11,"is-electron":21}],16:[function(require,module,exports){
 /*
  * ed2curve: convert Ed25519 signing key pair into Curve25519
  * key pair suitable for Diffie-Hellman key exchange.
@@ -2589,7 +2515,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
 module.exports = function (buf) {
   var len = buf.length, i
 
-  for(i = len - 1; buf[i] === 255; i--) buf[i] = 0
+  for(i = len - 1; i >= 0 && buf[i] === 255; i--) buf[i] = 0
   if(~i) buf[i] = buf[i] + 1
 
   return buf
@@ -2647,26 +2573,28 @@ function isSlowBuffer (obj) {
 (function (process){
 // https://github.com/electron/electron/issues/2288
 function isElectron() {
-    if (typeof window !== 'undefined' && window.process && window.process.type === 'renderer') {
+    // Renderer process
+    if (typeof window !== 'undefined' && typeof window.process === 'object' && window.process.type === 'renderer') {
         return true;
     }
-    if (typeof process !== 'undefined' && process.versions && !!process.versions.electron) {
+
+    // Main process
+    if (typeof process !== 'undefined' && typeof process.versions === 'object' && !!process.versions.electron) {
         return true;
     }
+
+    // Detect the user agent when the `nodeIntegration` option is set to true
+    if (typeof navigator === 'object' && typeof navigator.userAgent === 'string' && navigator.userAgent.indexOf('Electron') >= 0) {
+        return true;
+    }
+
     return false;
 }
 
 module.exports = isElectron;
 
 }).call(this,require('_process'))
-},{"_process":27}],22:[function(require,module,exports){
-var toString = {}.toString;
-
-module.exports = Array.isArray || function (arr) {
-  return toString.call(arr) == '[object Array]';
-};
-
-},{}],23:[function(require,module,exports){
+},{"_process":26}],22:[function(require,module,exports){
 /**
  * lodash (Custom Build) <https://lodash.com/>
  * Build: `lodash modularize exports="npm" -o ./`
@@ -3336,7 +3264,7 @@ function keysIn(object) {
 
 module.exports = defaults;
 
-},{}],24:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 (function (global){
 /**
  * lodash (Custom Build) <https://lodash.com/>
@@ -3843,7 +3771,7 @@ var pick = baseRest(function(object, props) {
 module.exports = pick;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],25:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 
 var looper = module.exports = function (fun) {
   (function next () {
@@ -3859,7 +3787,7 @@ var looper = module.exports = function (fun) {
   })()
 }
 
-},{}],26:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function (process){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -4087,7 +4015,7 @@ var substr = 'ab'.substr(-1) === 'b'
 ;
 
 }).call(this,require('_process'))
-},{"_process":27}],27:[function(require,module,exports){
+},{"_process":26}],26:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -4258,6 +4186,10 @@ process.off = noop;
 process.removeListener = noop;
 process.removeAllListeners = noop;
 process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
 
 process.binding = function (name) {
     throw new Error('process.binding is not supported');
@@ -4269,7 +4201,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],28:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 (function (Buffer){
 'use strict'
 var sodium = require('chloride')
@@ -4370,6 +4302,7 @@ exports.createDecryptStream = function (key, nonce) {
   }
   else if(!(key.length === 32 && nonce.length === 24))
     throw new Error('nonce must be 24 bytes')
+  nonce = copy(nonce)
 
   var reader = Reader(), first = true,  ended
   var first = true
@@ -4418,7 +4351,7 @@ exports.createDecryptStream = function (key, nonce) {
 }
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":12,"chloride":15,"increment-buffer":18,"pull-reader":33,"pull-through":66,"split-buffer":86}],29:[function(require,module,exports){
+},{"buffer":11,"chloride":15,"increment-buffer":18,"pull-reader":32,"pull-through":65,"split-buffer":86}],28:[function(require,module,exports){
 var noop = function () {}
 
 function abortAll(ary, abort, cb) {
@@ -4461,7 +4394,7 @@ module.exports = function (streams) {
 
 
 
-},{}],30:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 var Reader = require('pull-reader')
 var Writer = require('pull-pushable')
 var cat = require('pull-cat')
@@ -4512,7 +4445,7 @@ module.exports = function (opts, _cb) {
   }
 }
 
-},{"pull-cat":29,"pull-pair":31,"pull-pushable":32,"pull-reader":33}],31:[function(require,module,exports){
+},{"pull-cat":28,"pull-pair":30,"pull-pushable":31,"pull-reader":32}],30:[function(require,module,exports){
 'use strict'
 
 //a pair of pull streams where one drains from the other
@@ -4544,10 +4477,15 @@ module.exports = function () {
 }
 
 
-},{}],32:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 module.exports = pullPushable
 
-function pullPushable (onClose) {
+function pullPushable (separated, onClose) {
+  if (typeof separated === 'function') {
+    onClose = separated
+    separated = false
+  }
+
   // create a buffer for data
   // that have been pushed
   // but not yet pulled.
@@ -4572,13 +4510,13 @@ function pullPushable (onClose) {
   }
 
   var ended
-  read.end = function (end) {
+  function end (end) {
     ended = ended || end || true
     // attempt to drain
     drain()
   }
 
-  read.push = function (data) {
+  function push (data) {
     if (ended) return
     // if sink already waiting,
     // we can call back directly.
@@ -4592,6 +4530,14 @@ function pullPushable (onClose) {
     drain()
   }
 
+  // Return functions separated from source { push, end, source }
+  if (separated) {
+    return { push: push, end: end, source: read }
+  }
+
+  // Return normal
+  read.push = push
+  read.end = end
   return read
 
   // `drain` calls back to (if any) waiting
@@ -4620,7 +4566,7 @@ function pullPushable (onClose) {
   }
 }
 
-},{}],33:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 'use strict'
 var State = require('./state')
 
@@ -4710,9 +4656,9 @@ module.exports = function (timeout) {
       cb()
   }
 
-  reader.read = function (len, timeout, cb) {
-    if(isFunction(timeout))
-      cb = timeout, timeout = 0
+  reader.read = function (len, _timeout, cb) {
+    if(isFunction(_timeout))
+      cb = _timeout, _timeout = timeout
     if(isFunction(cb)) {
       queue.push({length: isInteger(len) ? len : null, cb: cb})
       more()
@@ -4729,7 +4675,7 @@ module.exports = function (timeout) {
           more()
         }
         else
-          maxDelay(read, timeout)(abort, function (err, data) {
+          maxDelay(read, _timeout)(abort, function (err, data) {
             cb(err, data)
           })
       }
@@ -4744,7 +4690,7 @@ module.exports = function (timeout) {
 
 
 
-},{"./state":34}],34:[function(require,module,exports){
+},{"./state":33}],33:[function(require,module,exports){
 (function (Buffer){
 
 module.exports = function () {
@@ -4821,7 +4767,7 @@ module.exports = function () {
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":12}],35:[function(require,module,exports){
+},{"buffer":11}],34:[function(require,module,exports){
 'use strict'
 
 var sources  = require('./sources')
@@ -4829,6 +4775,8 @@ var sinks    = require('./sinks')
 var throughs = require('./throughs')
 
 exports = module.exports = require('./pull')
+
+exports.pull = exports
 
 for(var k in sources)
   exports[k] = sources[k]
@@ -4840,7 +4788,7 @@ for(var k in sinks)
   exports[k] = sinks[k]
 
 
-},{"./pull":36,"./sinks":41,"./sources":48,"./throughs":57}],36:[function(require,module,exports){
+},{"./pull":35,"./sinks":40,"./sources":47,"./throughs":56}],35:[function(require,module,exports){
 'use strict'
 
 module.exports = function pull (a) {
@@ -4891,7 +4839,7 @@ module.exports = function pull (a) {
   return read
 }
 
-},{}],37:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 'use strict'
 
 var reduce = require('./reduce')
@@ -4903,7 +4851,7 @@ module.exports = function collect (cb) {
   }, [], cb)
 }
 
-},{"./reduce":44}],38:[function(require,module,exports){
+},{"./reduce":43}],37:[function(require,module,exports){
 'use strict'
 
 var reduce = require('./reduce')
@@ -4914,7 +4862,7 @@ module.exports = function concat (cb) {
   }, '', cb)
 }
 
-},{"./reduce":44}],39:[function(require,module,exports){
+},{"./reduce":43}],38:[function(require,module,exports){
 'use strict'
 
 module.exports = function drain (op, done) {
@@ -4964,7 +4912,7 @@ module.exports = function drain (op, done) {
   return sink
 }
 
-},{}],40:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -4994,7 +4942,7 @@ module.exports = function find (test, cb) {
 
 
 
-},{"../util/prop":64,"./drain":39}],41:[function(require,module,exports){
+},{"../util/prop":63,"./drain":38}],40:[function(require,module,exports){
 'use strict'
 
 module.exports = {
@@ -5008,7 +4956,7 @@ module.exports = {
 }
 
 
-},{"./collect":37,"./concat":38,"./drain":39,"./find":40,"./log":42,"./on-end":43,"./reduce":44}],42:[function(require,module,exports){
+},{"./collect":36,"./concat":37,"./drain":38,"./find":39,"./log":41,"./on-end":42,"./reduce":43}],41:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5019,7 +4967,7 @@ module.exports = function log (done) {
   }, done)
 }
 
-},{"./drain":39}],43:[function(require,module,exports){
+},{"./drain":38}],42:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5028,7 +4976,7 @@ module.exports = function onEnd (done) {
   return drain(null, done)
 }
 
-},{"./drain":39}],44:[function(require,module,exports){
+},{"./drain":38}],43:[function(require,module,exports){
 'use strict'
 
 var drain = require('./drain')
@@ -5052,7 +5000,7 @@ module.exports = function reduce (reducer, acc, cb ) {
     return sink
 }
 
-},{"./drain":39}],45:[function(require,module,exports){
+},{"./drain":38}],44:[function(require,module,exports){
 'use strict'
 
 module.exports = function count (max) {
@@ -5067,7 +5015,7 @@ module.exports = function count (max) {
 
 
 
-},{}],46:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 'use strict'
 //a stream that ends immediately.
 module.exports = function empty () {
@@ -5076,7 +5024,7 @@ module.exports = function empty () {
   }
 }
 
-},{}],47:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 'use strict'
 //a stream that errors immediately.
 module.exports = function error (err) {
@@ -5086,7 +5034,7 @@ module.exports = function error (err) {
 }
 
 
-},{}],48:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict'
 module.exports = {
   keys: require('./keys'),
@@ -5098,7 +5046,7 @@ module.exports = {
   error: require('./error')
 }
 
-},{"./count":45,"./empty":46,"./error":47,"./infinite":49,"./keys":50,"./once":51,"./values":52}],49:[function(require,module,exports){
+},{"./count":44,"./empty":45,"./error":46,"./infinite":48,"./keys":49,"./once":50,"./values":51}],48:[function(require,module,exports){
 'use strict'
 module.exports = function infinite (generate) {
   generate = generate || Math.random
@@ -5110,7 +5058,7 @@ module.exports = function infinite (generate) {
 
 
 
-},{}],50:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 'use strict'
 var values = require('./values')
 module.exports = function (object) {
@@ -5119,7 +5067,7 @@ module.exports = function (object) {
 
 
 
-},{"./values":52}],51:[function(require,module,exports){
+},{"./values":51}],50:[function(require,module,exports){
 'use strict'
 var abortCb = require('../util/abort-cb')
 
@@ -5137,7 +5085,7 @@ module.exports = function once (value, onAbort) {
 
 
 
-},{"../util/abort-cb":63}],52:[function(require,module,exports){
+},{"../util/abort-cb":62}],51:[function(require,module,exports){
 'use strict'
 var abortCb = require('../util/abort-cb')
 
@@ -5162,7 +5110,7 @@ module.exports = function values (array, onAbort) {
   }
 }
 
-},{"../util/abort-cb":63}],53:[function(require,module,exports){
+},{"../util/abort-cb":62}],52:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5207,7 +5155,7 @@ module.exports = function asyncMap (map) {
 
 
 
-},{"../util/prop":64}],54:[function(require,module,exports){
+},{"../util/prop":63}],53:[function(require,module,exports){
 'use strict'
 
 var tester = require('../util/tester')
@@ -5218,7 +5166,7 @@ module.exports = function filterNot (test) {
   return filter(function (data) { return !test(data) })
 }
 
-},{"../util/tester":65,"./filter":55}],55:[function(require,module,exports){
+},{"../util/tester":64,"./filter":54}],54:[function(require,module,exports){
 'use strict'
 
 var tester = require('../util/tester')
@@ -5244,7 +5192,7 @@ module.exports = function filter (test) {
 }
 
 
-},{"../util/tester":65}],56:[function(require,module,exports){
+},{"../util/tester":64}],55:[function(require,module,exports){
 'use strict'
 
 var values = require('../sources/values')
@@ -5293,7 +5241,7 @@ module.exports = function flatten () {
 }
 
 
-},{"../sources/once":51,"../sources/values":52}],57:[function(require,module,exports){
+},{"../sources/once":50,"../sources/values":51}],56:[function(require,module,exports){
 'use strict'
 
 module.exports = {
@@ -5311,7 +5259,7 @@ module.exports = {
 
 
 
-},{"./async-map":53,"./filter":55,"./filter-not":54,"./flatten":56,"./map":58,"./non-unique":59,"./take":60,"./through":61,"./unique":62}],58:[function(require,module,exports){
+},{"./async-map":52,"./filter":54,"./filter-not":53,"./flatten":55,"./map":57,"./non-unique":58,"./take":59,"./through":60,"./unique":61}],57:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5336,7 +5284,7 @@ module.exports = function map (mapper) {
   }
 }
 
-},{"../util/prop":64}],59:[function(require,module,exports){
+},{"../util/prop":63}],58:[function(require,module,exports){
 'use strict'
 
 var unique = require('./unique')
@@ -5346,7 +5294,7 @@ module.exports = function nonUnique (field) {
   return unique(field, true)
 }
 
-},{"./unique":62}],60:[function(require,module,exports){
+},{"./unique":61}],59:[function(require,module,exports){
 'use strict'
 
 //read a number of items and then stop.
@@ -5389,7 +5337,7 @@ module.exports = function take (test, opts) {
   }
 }
 
-},{}],61:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 'use strict'
 
 //a pass through stream that doesn't change the value.
@@ -5414,7 +5362,7 @@ module.exports = function through (op, onEnd) {
   }
 }
 
-},{}],62:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 'use strict'
 
 function id (e) { return e }
@@ -5434,7 +5382,7 @@ module.exports = function unique (field, invert) {
 }
 
 
-},{"../util/prop":64,"./filter":55}],63:[function(require,module,exports){
+},{"../util/prop":63,"./filter":54}],62:[function(require,module,exports){
 module.exports = function abortCb(cb, abort, onAbort) {
   cb(abort)
   onAbort && onAbort(abort === true ? null: abort)
@@ -5442,7 +5390,7 @@ module.exports = function abortCb(cb, abort, onAbort) {
 }
 
 
-},{}],64:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = function prop (key) {
   return key && (
     'string' == typeof key
@@ -5453,7 +5401,7 @@ module.exports = function prop (key) {
   )
 }
 
-},{}],65:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 var prop = require('./prop')
 
 function id (e) { return e }
@@ -5466,7 +5414,7 @@ module.exports = function tester (test) {
   )
 }
 
-},{"./prop":64}],66:[function(require,module,exports){
+},{"./prop":63}],65:[function(require,module,exports){
 var looper = require('looper')
 
 module.exports = function (writer, ender) {
@@ -5537,7 +5485,7 @@ module.exports = function (writer, ender) {
 }
 
 
-},{"looper":25}],67:[function(require,module,exports){
+},{"looper":24}],66:[function(require,module,exports){
 'use strict';
 
 //load websocket library if we are not in the browser
@@ -5577,7 +5525,7 @@ module.exports = function (addr, opts) {
 
 module.exports.connect = module.exports
 
-},{"./duplex":68,"./web-socket":72,"./ws-url":73}],68:[function(require,module,exports){
+},{"./duplex":67,"./web-socket":71,"./ws-url":72}],67:[function(require,module,exports){
 var source = require('./source')
 var sink = require('./sink')
 
@@ -5602,7 +5550,7 @@ function duplex (ws, opts) {
 };
 
 
-},{"./sink":70,"./source":71}],69:[function(require,module,exports){
+},{"./sink":69,"./source":70}],68:[function(require,module,exports){
 module.exports = function(socket, callback) {
   var remove = socket && (socket.removeEventListener || socket.removeListener);
 
@@ -5635,7 +5583,7 @@ module.exports = function(socket, callback) {
   socket.addEventListener('error', handleErr);
 };
 
-},{}],70:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 (function (process){
 var ready = require('./ready');
 
@@ -5693,7 +5641,7 @@ module.exports = function(socket, opts) {
 }
 
 }).call(this,require('_process'))
-},{"./ready":69,"_process":27}],71:[function(require,module,exports){
+},{"./ready":68,"_process":26}],70:[function(require,module,exports){
 (function (Buffer){
 /**
   ### `source(socket)`
@@ -5775,11 +5723,11 @@ module.exports = function(socket, cb) {
 };
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":12}],72:[function(require,module,exports){
+},{"buffer":11}],71:[function(require,module,exports){
 
 module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
 
-},{"ws":10}],73:[function(require,module,exports){
+},{"ws":10}],72:[function(require,module,exports){
 var rurl = require('relative-url')
 var map = {http:'ws', https:'wss'}
 var def = 'ws'
@@ -5789,7 +5737,7 @@ module.exports = function (url, location) {
 
 
 
-},{"relative-url":78}],74:[function(require,module,exports){
+},{"relative-url":77}],73:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.1 by @mathias */
 ;(function(root) {
@@ -6326,7 +6274,7 @@ module.exports = function (url, location) {
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],75:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6412,7 +6360,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],76:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6499,13 +6447,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],77:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":75,"./encode":76}],78:[function(require,module,exports){
+},{"./decode":74,"./encode":75}],77:[function(require,module,exports){
 
 //normalize a ws url.
 var URL = require('url')
@@ -6603,200 +6551,76 @@ module.exports = function (url, location, protocolMap, defaultProtocol) {
 
 
 
-},{"url":89}],79:[function(require,module,exports){
-var pull = require('pull-stream')
+},{"url":89}],78:[function(require,module,exports){
+/* eslint-disable node/no-deprecated-api */
+var buffer = require('buffer')
+var Buffer = buffer.Buffer
 
-var Handshake = require('pull-handshake')
-var State = require('./state')
+// alternative to using Object.keys for old browsers
+function copyProps (src, dst) {
+  for (var key in src) {
+    dst[key] = src[key]
+  }
+}
+if (Buffer.from && Buffer.alloc && Buffer.allocUnsafe && Buffer.allocUnsafeSlow) {
+  module.exports = buffer
+} else {
+  // Copy properties from require('buffer')
+  copyProps(buffer, exports)
+  exports.Buffer = SafeBuffer
+}
 
-var challenge_length = 64
-var client_auth_length = 16+32+64
-var server_auth_length = 16+64
-var mac_length = 16
+function SafeBuffer (arg, encodingOrOffset, length) {
+  return Buffer(arg, encodingOrOffset, length)
+}
 
-//client is Alice
-//create the client stream with the public key you expect to connect to.
-exports.client =
-exports.createClientStream = function (alice, app_key, timeout) {
+// Copy static methods from Buffer
+copyProps(Buffer, SafeBuffer)
 
-  return function (bob_pub, seed, cb) {
-    if('function' == typeof seed)
-      cb = seed, seed = null
+SafeBuffer.from = function (arg, encodingOrOffset, length) {
+  if (typeof arg === 'number') {
+    throw new TypeError('Argument must not be a number')
+  }
+  return Buffer(arg, encodingOrOffset, length)
+}
 
-    //alice may be null.
-    var state = new State(app_key, alice, bob_pub, seed)
-
-    var stream = Handshake({timeout: timeout}, cb)
-    var shake = stream.handshake
-    delete stream.handshake
-
-    function abort(err, reason) {
-      if(err && err !== true) shake.abort(err, cb)
-      else                    shake.abort(new Error(reason), cb)
+SafeBuffer.alloc = function (size, fill, encoding) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number')
+  }
+  var buf = Buffer(size)
+  if (fill !== undefined) {
+    if (typeof encoding === 'string') {
+      buf.fill(fill, encoding)
+    } else {
+      buf.fill(fill)
     }
-
-    shake.write(state.createChallenge())
-
-    shake.read(challenge_length, function (err, msg) {
-      if(err) return abort(err, 'challenge not accepted')
-      //create the challenge first, because we need to generate a local key
-      if(!state.verifyChallenge(msg))
-        return abort(null, 'wrong protocol (version?)')
-
-      shake.write(state.createClientAuth())
-
-      shake.read(server_auth_length, function (err, boxed_sig) {
-        if(err) return abort(err, 'hello not accepted')
-
-        if(!state.verifyServerAccept(boxed_sig))
-          return abort(null, 'server not authenticated')
-
-        cb(null, shake.rest(), state.cleanSecrets())
-      })
-    })
-
-    return stream
+  } else {
+    buf.fill(0)
   }
+  return buf
 }
 
-//server is Bob.
-exports.server =
-exports.createServerStream = function (bob, authorize, app_key, timeout) {
-
-  return function (cb) {
-    var state = new State(app_key, bob)
-    var stream = Handshake({timeout: timeout}, cb)
-
-    var shake = stream.handshake
-    delete stream.handshake
-
-    function abort (err, reason) {
-      if(err && err !== true) shake.abort(err, cb)
-      else                    shake.abort(new Error(reason), cb)
-    }
-
-    shake.read(challenge_length, function (err, challenge) {
-      if(err) return abort(err, 'expected challenge')
-      if(!state.verifyChallenge(challenge))
-        return shake.abort(new Error('wrong protocol/version'))
-
-      shake.write(state.createChallenge())
-      shake.read(client_auth_length, function (err, hello) {
-        if(err) return abort(err, 'expected hello')
-        if(!state.verifyClientAuth(hello)) {
-          //we know who the client was, but chose not to answer:
-          if(state.remote.public)
-            return abort(null, 'unauthenticated client:' + state.remote.public.toString('hex'), cb)
-          //client dialed wrong number... (we don't know who they where)
-          else
-            return abort(null, 'wrong number')
-        }
-        //check if the user wants to speak to alice.
-        authorize(state.remote.public, function (err, auth) {
-          if(auth == null && !err) err = new Error('client unauthorized')
-          if(!auth) return abort(err, 'client authentication rejected')
-          state.auth = auth
-          shake.write(state.createServerAccept())
-          cb(null, shake.rest(), state.cleanSecrets())
-        })
-      })
-    })
-    return stream
+SafeBuffer.allocUnsafe = function (size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number')
   }
+  return Buffer(size)
 }
 
+SafeBuffer.allocUnsafeSlow = function (size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number')
+  }
+  return buffer.SlowBuffer(size)
+}
 
-
-
-},{"./state":82,"pull-handshake":30,"pull-stream":35}],80:[function(require,module,exports){
+},{"buffer":11}],79:[function(require,module,exports){
 (function (Buffer){
-var handshake = require('./handshake')
-var secure = require('./secure')
-var cl = require('chloride')
-
-function isBuffer(buf, len) {
-  return Buffer.isBuffer(buf) && buf.length === len
-}
-
-exports.client =
-exports.createClient = function (alice, app_key, timeout) {
-  var create = handshake.client(alice, app_key, timeout)
-
-  return function (bob, seed, cb) {
-    if(!isBuffer(bob, 32))
-      throw new Error('createClient *must* be passed a public key')
-    if('function' === typeof seed)
-      return create(bob, secure(seed))
-    else
-      return create(bob, seed, secure(cb))
-  }
-
-}
-exports.server =
-exports.createServer = function (bob, authorize, app_key, timeout) {
-  var create = handshake.server(bob, authorize, app_key, timeout)
-
-  return function (cb) {
-    return create(secure(cb))
-  }
-
-}
-
-
-exports.toKeys = function (keys) {
-  if(isBuffer(keys, 32))
-    return cl.crypto_sign_seed_keypair(keys)
-  return keys
-}
-
-}).call(this,{"isBuffer":require("../is-buffer/index.js")})
-},{"../is-buffer/index.js":20,"./handshake":79,"./secure":81,"chloride":15}],81:[function(require,module,exports){
-(function (Buffer){
-var sodium = require('chloride')
-var hash = sodium.crypto_hash_sha256
-var pull = require('pull-stream')
-var boxes = require('pull-box-stream')
-
-var concat = Buffer.concat
-
-module.exports = function (cb) {
-
-  return function (err, stream, state) {
-    if(err) return cb(err)
-
-    var en_key = hash(concat([state.secret, state.remote.public]))
-    var de_key = hash(concat([state.secret, state.local.public]))
-
-    var en_nonce = state.remote.app_mac.slice(0, 24)
-    var de_nonce = state.local.app_mac.slice(0, 24)
-
-    cb(null, {
-      remote: state.remote.public,
-      //on the server, attach any metadata gathered
-      //during `authorize` call
-      auth: state.auth,
-      source: pull(
-        stream.source,
-        boxes.createUnboxStream(de_key, de_nonce)
-      ),
-      sink: pull(
-        boxes.createBoxStream(en_key, en_nonce),
-        stream.sink
-      )
-    })
-  }
-
-}
-
-
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":12,"chloride":15,"pull-box-stream":28,"pull-stream":35}],82:[function(require,module,exports){
-(function (Buffer){
-
+'use strict'
 var sodium      = require('chloride')
 
-var keypair     = sodium.crypto_box_keypair
+var keypair     = sodium.crypto_box_seed_keypair
 var from_seed   = sodium.crypto_sign_seed_keypair
 var shared      = sodium.crypto_scalarmult
 var hash        = sodium.crypto_hash_sha256
@@ -6813,52 +6637,55 @@ var concat = Buffer.concat
 
 var nonce = new Buffer(24); nonce.fill(0)
 
-var challenge_length = 64
-var client_auth_length = 16+32+64
-var server_auth_length = 16+64
-var mac_length = 16
+var isBuffer = Buffer.isBuffer
 
-//this is a simple secure handshake,
-//the client public key is passed in plain text,
+exports.challenge_length = 64
+exports.client_auth_length = 16+32+64
+exports.server_auth_length = 16+64
+exports.mac_length = 16
 
-module.exports = State
+//both client and server
 
-function State (app_key, local, remote, seed) {
-
-  if(!(this instanceof State)) return new State(app_key, local, remote, seed)
-
-  if(seed) local = from_seed(seed)
-
-  this.app_key = app_key
-  var kx = keypair()
-  this.local = {
-    kx_pk: kx.publicKey,
-    kx_sk: kx.secretKey,
-    public: local.publicKey,
-    secret: local.secretKey
-  }
-  this.remote = {
-    public: remote || null
-  }
-
+function assert_length(buf, name, length) {
+  if(buf.length !== length)
+    throw new Error('expected '+name+' to have length' + length + ', but was:'+buf.length)
 }
 
-var proto = State.prototype
+exports.initialize = function (state) {
 
-proto.createChallenge =
-function createChallenge () {
-  var state = this
+  if(state.seed) state.local = from_seed(state.seed)
 
-  state.local.app_mac = auth(state.local.kx_pk, state.app_key)
+  //TODO: sodium is missing box_seed_keypair. should make PR for that.
+
+  var _key = from_seed(state.random)
+//  var kx = keypair(random)
+  var kx_pk = curvify_pk(_key.publicKey)
+  var kx_sk = curvify_sk(_key.secretKey)
+
+  state.local = {
+    kx_pk: kx_pk,
+    kx_sk: kx_sk,
+    publicKey: state.local.publicKey,
+    secretKey: state.local.secretKey,
+    app_mac: auth(kx_pk, state.app_key)
+  }
+
+  state.remote = state.remote || {}
+
+  return state
+}
+
+exports.createChallenge = function (state) {
   return concat([state.local.app_mac, state.local.kx_pk])
 }
 
-proto.verifyChallenge =
-function verifyChallenge (challenge) {
-  var state = this
+
+exports.verifyChallenge = function (state, challenge) {
+  assert_length(challenge, 'challenge', exports.challenge_length)
 
   var mac = challenge.slice(0, 32)
-  var remote_pk = challenge.slice(32, challenge.length)
+  var remote_pk = challenge.slice(32, exports.challenge_length)
+
   if(0 !== verify_auth(mac, remote_pk, state.app_key))
     return null
 
@@ -6867,34 +6694,83 @@ function verifyChallenge (challenge) {
   state.secret = shared(state.local.kx_sk, state.remote.kx_pk)
   state.shash = hash(state.secret)
 
-  return true
+  return state
 }
 
+exports.clean = function (state) {
+  // clean away all the secrets for forward security.
+  // use a different secret hash(secret3) in the rest of the session,
+  // and so that a sloppy application cannot compromise the handshake.
 
-proto.createClientAuth =
-function createClientAuth () {
-  var state = this
+  state.shash.fill(0)
+  state.secret.fill(0)
+  state.a_bob.fill(0)
+  state.b_alice.fill(0)
+
+  state.secret = hash(state.secret3)
+  state.encryptKey = hash(concat([state.secret, state.remote.publicKey]))
+  state.decryptKey = hash(concat([state.secret, state.local.publicKey]))
+
+  state.secret2.fill(0)
+  state.secret3.fill(0)
+  state.local.kx_sk.fill(0)
+
+  state.shash = null
+  state.secret2 = null
+  state.secret3 = null
+  state.a_bob = null
+  state.b_alice = null
+  state.local.kx_sk = null
+  return state
+}
+
+//client side only (Alice)
+
+exports.clientVerifyChallenge = function (state, challenge) {
+  assert_length(challenge, 'challenge', exports.challenge_length)
+  state = exports.verifyChallenge(state, challenge)
+  if(!state) return null
+
   //now we have agreed on the secret.
   //this can be an encryption secret,
   //or a hmac secret.
 
-  // shared(local.kx, remote.public)
-  var a_bob = shared(state.local.kx_sk, curvify_pk(state.remote.public))
+  var a_bob = shared(state.local.kx_sk, curvify_pk(state.remote.publicKey))
   state.a_bob = a_bob
   state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
 
-  var signed = concat([state.app_key, state.remote.public, state.shash])
-  var sig = sign(signed, state.local.secret)
+  var signed = concat([state.app_key, state.remote.publicKey, state.shash])
+  var sig = sign(signed, state.local.secretKey)
 
-  state.local.hello = Buffer.concat([sig, state.local.public])
+  state.local.hello = Buffer.concat([sig, state.local.publicKey])
+  return state
+}
+
+exports.clientCreateAuth = function (state) {
   return box(state.local.hello, nonce, state.secret2)
 }
 
-proto.verifyClientAuth =
-function verifyClientAuth (data) {
-  var state = this
+exports.clientVerifyAccept = function (state, boxed_okay) {
+  assert_length(boxed_okay, 'server_auth', exports.server_auth_length)
 
-  var a_bob = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
+  var b_alice = shared(curvify_sk(state.local.secretKey), state.remote.kx_pk)
+  state.b_alice = b_alice
+  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
+
+  var sig = unbox(boxed_okay, nonce, state.secret3)
+  if(!sig) return null
+  var signed = concat([state.app_key, state.local.hello, state.shash])
+  if(!verify(sig, signed, state.remote.publicKey))
+      return null
+  return state
+}
+
+//server side only (Bob)
+
+exports.serverVerifyAuth = function (state, data) {
+  assert_length(data, 'client_auth', exports.client_auth_length)
+
+  var a_bob = shared(curvify_sk(state.local.secretKey), state.remote.kx_pk)
   state.a_bob = a_bob
   state.secret2 = hash(concat([state.app_key, state.secret, a_bob]))
 
@@ -6903,83 +6779,335 @@ function verifyClientAuth (data) {
     return null
 
   var sig = state.remote.hello.slice(0, 64)
-  var public = state.remote.hello.slice(64, client_auth_length)
+  var publicKey = state.remote.hello.slice(64, exports.client_auth_length)
 
-  var signed = concat([state.app_key, state.local.public, state.shash])
-  if(!verify(sig, signed, public))
+  var signed = concat([state.app_key, state.local.publicKey, state.shash])
+  if(!verify(sig, signed, publicKey))
     return null
 
-  state.remote.public = public
-
-  return true
-}
-
-proto.createServerAccept =
-function createServerAccept () {
-  var state = this
-
+  state.remote.publicKey = publicKey
   //shared key between my local ephemeral key + remote public
-  var b_alice = shared(state.local.kx_sk, curvify_pk(state.remote.public))
+  var b_alice = shared(state.local.kx_sk, curvify_pk(state.remote.publicKey))
   state.b_alice = b_alice
   state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
 
+  return state
+
+}
+
+exports.serverCreateAccept = function (state) {
   var signed = concat([state.app_key, state.remote.hello, state.shash])
-  var okay = sign(signed, state.local.secret)
+  var okay = sign(signed, state.local.secretKey)
   return box(okay, nonce, state.secret3)
 }
 
-proto.verifyServerAccept =
-function verifyServerAccept (boxed_okay) {
-  var state = this
-
-  var b_alice = shared(curvify_sk(state.local.secret), state.remote.kx_pk)
-  state.b_alice = b_alice
-//  state.secret3 = hash(concat([state.secret2, b_alice]))
-  state.secret3 = hash(concat([state.app_key, state.secret, state.a_bob, state.b_alice]))
-
-  var sig = unbox(boxed_okay, nonce, state.secret3)
-  if(!sig) return null
-  var signed = concat([state.app_key, state.local.hello, state.shash])
-  if(!verify(sig, signed, state.remote.public))
-      return null
-  return true
+exports.toKeys = function (keys) {
+  if(isBuffer(keys, 32))
+    return sodium.crypto_sign_seed_keypair(keys)
+  return keys
 }
-
-proto.cleanSecrets =
-function cleanSecrets () {
-  var state = this
-
-  // clean away all the secrets for forward security.
-  // use a different secret hash(secret3) in the rest of the session,
-  // and so that a sloppy application cannot compromise the handshake.
-
-  delete state.local.secret
-  state.shash.fill(0)
-  state.secret.fill(0)
-  state.a_bob.fill(0)
-  state.b_alice.fill(0)
-  state.secret = hash(state.secret3)
-  state.secret2.fill(0)
-  state.secret3.fill(0)
-  state.local.kx_sk.fill(0)
-
-  delete state.shash
-  delete state.secret2
-  delete state.secret3
-  delete state.a_bob
-  delete state.b_alice
-  delete state.local.kx_sk
-
-  return state
-}
-
-
-
 
 
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":12,"chloride":15}],83:[function(require,module,exports){
+},{"buffer":11,"chloride":15}],80:[function(require,module,exports){
+'use strict'
+module.exports = require('./protocol')(require('./crypto'))
+
+
+
+
+
+
+
+
+
+
+},{"./crypto":79,"./protocol":81}],81:[function(require,module,exports){
+(function (Buffer){
+var pull = require('pull-stream')
+var boxes = require('pull-box-stream')
+
+var Handshake = require('pull-handshake')
+var random = require('./random')
+
+function isBuffer(buf, len) {
+  return Buffer.isBuffer(buf) && buf.length === len
+}
+
+module.exports = function (stateless) {
+  var exports = {}
+  //client is Alice
+  //create the client stream with the public key you expect to connect to.
+  exports.createClientStream = function (alice, app_key, timeout) {
+
+    return function (bob_pub, seed, cb) {
+      if('function' == typeof seed)
+        cb = seed, seed = null
+
+      //alice may be null.
+      var state = stateless.initialize({
+        app_key: app_key,
+        local: alice,
+        remote: {publicKey: bob_pub},
+        seed: seed,
+        random: random(32)
+      })
+
+      var stream = Handshake({timeout: timeout}, cb)
+      var shake = stream.handshake
+      stream.handshake = null
+
+      function abort(err, reason) {
+        if(err && err !== true) shake.abort(err, cb)
+        else                    shake.abort(new Error(reason), cb)
+      }
+
+      shake.write(stateless.createChallenge(state))
+
+      shake.read(stateless.challenge_length, function (err, msg) {
+        if(err) return abort(err, 'challenge not accepted')
+        //create the challenge first, because we need to generate a local key
+        if(!(state = stateless.clientVerifyChallenge(state, msg)))
+          return abort(null, 'wrong protocol (version?)')
+
+        shake.write(stateless.clientCreateAuth(state))
+
+        shake.read(stateless.server_auth_length, function (err, boxed_sig) {
+          if(err) return abort(err, 'hello not accepted')
+
+          if(!(state = stateless.clientVerifyAccept(state, boxed_sig)))
+            return abort(null, 'server not authenticated')
+
+          cb(null, shake.rest(), state = stateless.clean(state))
+        })
+      })
+
+      return stream
+    }
+  }
+
+  //server is Bob.
+  exports.createServerStream = function (bob, authorize, app_key, timeout) {
+
+    return function (cb) {
+      var state = stateless.initialize({
+        app_key: app_key,
+        local: bob,
+        //note, the server doesn't know the remote until it receives ClientAuth
+        random: random(32)
+      })
+      var stream = Handshake({timeout: timeout}, cb)
+
+      var shake = stream.handshake
+      stream.handshake = null
+
+      function abort (err, reason) {
+        if(err && err !== true) shake.abort(err, cb)
+        else                    shake.abort(new Error(reason), cb)
+      }
+
+      shake.read(stateless.challenge_length, function (err, challenge) {
+        if(err) return abort(err, 'expected challenge')
+        if(!(state = stateless.verifyChallenge(state, challenge)))
+          return shake.abort(new Error('wrong protocol/version'))
+
+        shake.write(stateless.createChallenge(state))
+        shake.read(stateless.client_auth_length, function (err, hello) {
+          if(err) return abort(err, 'expected hello')
+
+          if(!(state = stateless.serverVerifyAuth(state, hello)))
+            return abort(null, 'wrong number')
+
+          //check if the user wants to speak to alice.
+          authorize(state.remote.publicKey, function (err, auth) {
+            if(auth == null && !err) err = new Error('client unauthorized')
+            if(!auth) return abort(err, 'client authentication rejected')
+            state.auth = auth
+            shake.write(stateless.serverCreateAccept(state))
+            cb(null, shake.rest(), state = stateless.clean(state))
+          })
+        })
+      })
+      return stream
+    }
+  }
+
+  //wrap the above into an actual handshake + encrypted session
+
+  exports.toKeys = stateless.toKeys
+
+  function secure (cb) {
+    return function (err, stream, state) {
+      if(err) return cb(err)
+
+      var en_nonce = state.remote.app_mac.slice(0, 24)
+      var de_nonce = state.local.app_mac.slice(0, 24)
+
+      cb(null, {
+        remote: state.remote.publicKey,
+        //on the server, attach any metadata gathered
+        //during `authorize` call
+        auth: state.auth,
+        source: pull(
+          stream.source,
+          boxes.createUnboxStream(state.decryptKey, de_nonce)
+        ),
+        sink: pull(
+          boxes.createBoxStream(state.encryptKey, en_nonce),
+          stream.sink
+        )
+      })
+    }
+  }
+
+  exports.client =
+  exports.createClient = function (alice, app_key, timeout) {
+    var create = exports.createClientStream(alice, app_key, timeout)
+
+    return function (bob, seed, cb) {
+      if(!isBuffer(bob, 32))
+        throw new Error('createClient *must* be passed a public key')
+      if('function' === typeof seed)
+        return create(bob, secure(seed))
+      else
+        return create(bob, seed, secure(cb))
+    }
+  }
+
+  exports.server =
+  exports.createServer = function (bob, authorize, app_key, timeout) {
+    var create = exports.createServerStream(bob, authorize, app_key, timeout)
+
+    return function (cb) {
+      return create(secure(cb))
+    }
+  }
+
+  return exports
+}
+
+
+}).call(this,{"isBuffer":require("../is-buffer/index.js")})
+},{"../is-buffer/index.js":20,"./random":82,"pull-box-stream":27,"pull-handshake":29,"pull-stream":34}],82:[function(require,module,exports){
+(function (Buffer){
+'use strict'
+var cl = require('chloride')
+
+module.exports = function (bytes) {
+  var b = new Buffer(bytes)
+  cl.randombytes(b, bytes)
+  return b
+}
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11,"chloride":15}],83:[function(require,module,exports){
+(function (Buffer){
+
+var tweetnacl = require('tweetnacl/nacl-fast')
+var Sha256 = require('sha.js/sha256')
+var ed2curve = require('ed2curve')
+var auth = require('tweetnacl-auth')
+
+exports.crypto_hash_sha256 = function (msg) {
+  return new Sha256().update(msg).digest()
+}
+
+function fix_keys(keys) {
+  return {
+    publicKey: new Buffer(keys.publicKey),
+    secretKey: new Buffer(keys.secretKey),
+  }
+}
+
+exports.crypto_sign_seed_keypair = function (seed) {
+  return fix_keys(tweetnacl.sign.keyPair.fromSeed(seed))
+}
+
+exports.crypto_sign_keypair = function () {
+  return fix_keys(tweetnacl.sign.keyPair())
+}
+
+exports.crypto_sign_detached = function (msg, skey) {
+  return new Buffer(tweetnacl.sign.detached(msg, skey))
+}
+
+exports.crypto_sign = function (msg, sk) {
+  return new Buffer(tweetnacl.sign(msg, sk))
+}
+exports.crypto_sign_open = function (ctxt, pk) {
+  return new Buffer(tweetnacl.sign.open(ctxt, pk))
+}
+
+exports.crypto_sign_verify_detached = function (sig, msg, pkey) {
+  return tweetnacl.sign.detached.verify(msg, sig, pkey)
+}
+
+exports.crypto_box_keypair = function () {
+  return fix_keys(tweetnacl.box.keyPair())
+}
+
+
+exports.crypto_hash = function (msg) {
+  return new Buffer(tweetnacl.hash(msg))
+}
+
+exports.crypto_secretbox_easy = function (msg, key, nonce) {
+  return new Buffer(tweetnacl.secretbox(msg, key, nonce))
+}
+
+exports.crypto_secretbox_open_easy = function (ctxt, nonce, key) {
+  var r = tweetnacl.secretbox.open(ctxt, nonce, key)
+  return r ? new Buffer(r) : null
+}
+
+exports.crypto_sign_ed25519_pk_to_curve25519 = function (pk) {
+  return new Buffer(ed2curve.convertPublicKey(pk))
+}
+exports.crypto_sign_ed25519_sk_to_curve25519 = function (sk) {
+  return new Buffer(ed2curve.convertSecretKey(sk))
+}
+
+exports.crypto_box_easy = function (msg, nonce, pkey, skey) {
+  return new Buffer(tweetnacl.box(msg, nonce, pkey, skey))
+}
+
+exports.crypto_box_open_easy = function (ctxt, nonce, pkey, skey) {
+  var r = tweetnacl.box.open(ctxt, nonce, pkey, skey)
+  return r ? new Buffer(r) : null
+}
+
+exports.crypto_scalarmult = function (pk, sk) {
+  return new Buffer(tweetnacl.scalarMult(pk, sk))
+}
+
+//exports.crypto_auth = tweetnacl.auth
+//exports.crypto_auth_verify = tweetnacl.auth.verify
+
+exports.crypto_auth = function (msg, key) {
+  return new Buffer(auth(msg, key))
+}
+
+exports.crypto_auth_verify = function (mac, msg, key) {
+  var _mac = exports.crypto_auth(msg, key)
+  var d = true
+  //constant time comparson
+  for(var i = 0; i < _mac.length; i++) {
+    d = d && (_mac[i] === mac[i])
+  }
+  return +!d
+}
+
+exports.randombytes = function (buf) {
+  var b = new Buffer(tweetnacl.randomBytes(buf.length))
+  b.copy(buf)
+  return null
+}
+
+
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11,"ed2curve":16,"sha.js/sha256":85,"tweetnacl-auth":87,"tweetnacl/nacl-fast":88}],84:[function(require,module,exports){
 (function (Buffer){
 // prototype class for hash functions
 function Hash (blockSize, finalSize) {
@@ -7052,7 +7180,7 @@ Hash.prototype._update = function () {
 module.exports = Hash
 
 }).call(this,require("buffer").Buffer)
-},{"buffer":12}],84:[function(require,module,exports){
+},{"buffer":11}],85:[function(require,module,exports){
 (function (Buffer){
 /**
  * A JavaScript implementation of the Secure Hash Algorithm, SHA-256, as defined
@@ -7190,113 +7318,7 @@ Sha256.prototype._hash = function () {
 module.exports = Sha256
 
 }).call(this,require("buffer").Buffer)
-},{"./hash":83,"buffer":12,"inherits":19}],85:[function(require,module,exports){
-(function (Buffer){
-
-var tweetnacl = require('tweetnacl/nacl-fast')
-var Sha256 = require('sha.js/sha256')
-var ed2curve = require('ed2curve')
-var auth = require('tweetnacl-auth')
-
-exports.crypto_hash_sha256 = function (msg) {
-  return new Sha256().update(msg).digest()
-}
-
-function fix_keys(keys) {
-  return {
-    publicKey: new Buffer(keys.publicKey),
-    secretKey: new Buffer(keys.secretKey),
-  }
-}
-
-exports.crypto_sign_seed_keypair = function (seed) {
-  return fix_keys(tweetnacl.sign.keyPair.fromSeed(seed))
-}
-
-exports.crypto_sign_keypair = function () {
-  return fix_keys(tweetnacl.sign.keyPair())
-}
-
-exports.crypto_sign_detached = function (msg, skey) {
-  return new Buffer(tweetnacl.sign.detached(msg, skey))
-}
-
-exports.crypto_sign = function (msg, sk) {
-  return new Buffer(tweetnacl.sign(msg, sk))
-}
-exports.crypto_sign_open = function (ctxt, pk) {
-  return new Buffer(tweetnacl.sign.open(ctxt, pk))
-}
-
-exports.crypto_sign_verify_detached = function (sig, msg, pkey) {
-  return tweetnacl.sign.detached.verify(msg, sig, pkey)
-}
-
-exports.crypto_box_keypair = function () {
-  return fix_keys(tweetnacl.box.keyPair())
-}
-
-
-exports.crypto_hash = function (msg) {
-  return new Buffer(tweetnacl.hash(msg))
-}
-
-exports.crypto_secretbox_easy = function (msg, key, nonce) {
-  return new Buffer(tweetnacl.secretbox(msg, key, nonce))
-}
-
-exports.crypto_secretbox_open_easy = function (ctxt, nonce, key) {
-  var r = tweetnacl.secretbox.open(ctxt, nonce, key)
-  return r ? new Buffer(r) : null
-}
-
-exports.crypto_sign_ed25519_pk_to_curve25519 = function (pk) {
-  return new Buffer(ed2curve.convertPublicKey(pk))
-}
-exports.crypto_sign_ed25519_sk_to_curve25519 = function (sk) {
-  return new Buffer(ed2curve.convertSecretKey(sk))
-}
-
-exports.crypto_box_easy = function (msg, nonce, pkey, skey) {
-  return new Buffer(tweetnacl.box(msg, nonce, pkey, skey))
-}
-
-exports.crypto_box_open_easy = function (ctxt, nonce, pkey, skey) {
-  var r = tweetnacl.box.open(ctxt, nonce, pkey, skey)
-  return r ? new Buffer(r) : null
-}
-
-exports.crypto_scalarmult = function (pk, sk) {
-  return new Buffer(tweetnacl.scalarMult(pk, sk))
-}
-
-//exports.crypto_auth = tweetnacl.auth
-//exports.crypto_auth_verify = tweetnacl.auth.verify
-
-exports.crypto_auth = function (msg, key) {
-  return new Buffer(auth(msg, key))
-}
-
-exports.crypto_auth_verify = function (mac, msg, key) {
-  var _mac = exports.crypto_auth(msg, key)
-  var d = true
-  //constant time comparson
-  for(var i = 0; i < auth.length; i++) {
-    d = d && (_mac[i] === mac[i])
-  }
-  return +!d
-}
-
-exports.randombytes = function (buf) {
-  var b = new Buffer(tweetnacl.randomBytes(buf.length))
-  b.copy(buf)
-  return null
-}
-
-
-
-}).call(this,require("buffer").Buffer)
-},{"buffer":12,"ed2curve":16,"sha.js/sha256":84,"tweetnacl-auth":87,"tweetnacl/nacl-fast":88}],86:[function(require,module,exports){
+},{"./hash":84,"buffer":11,"inherits":19}],86:[function(require,module,exports){
 
 module.exports = function split (data, max) {
 
@@ -10488,7 +10510,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":90,"punycode":74,"querystring":77}],90:[function(require,module,exports){
+},{"./util":90,"punycode":73,"querystring":76}],90:[function(require,module,exports){
 'use strict';
 
 module.exports = {
