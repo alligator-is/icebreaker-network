@@ -42,10 +42,14 @@ A network library for [pull-streams](https://github.com/dominictarr/pull-stream)
   ```
 ## API
 
-### URL format for protocols with secret-handshake 
-``` shs+{protocol}://{Base64 and URL encoded public key}@{ip}:{port}/{app_key} ```
 ### URL format for TCP, WS, UTP
 ``` {protocol}://{ip}:{port}/ ```
+
+### URL format for TCP, WS unix sockets.
+``` {protocol+unix}://{path}```
+
+### URL format for protocols with secret-handshake 
+``` shs+{protocol}://{Base64 and URL encoded public key}@{ip}:{port}/{app_key} ```
 
 ### Events
 * ready 
