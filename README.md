@@ -52,7 +52,7 @@ A network library for [pull-streams](https://github.com/dominictarr/pull-stream)
 ``` shs+{protocol}://{Base64 and URL encoded public key}@{ip}:{port}/{app_key} ```
 
 ### URL format for TCP,WS unix sockets with secret-handshake 
-``` shs+{protocol}://{Base64 and URL encoded public key}@{path}/{app_key} ```
+``` shs+{protocol}+unix://{Base64 and URL encoded public key}@{path}/{app_key} ```
 
 ### Events
 * ready 
