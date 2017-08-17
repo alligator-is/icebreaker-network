@@ -64,7 +64,7 @@ catch (err) {
 test('shs+tcp v4', function (t) {
   t.plan(5)
 
-  var l = listen('shs+tcp://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@localhost:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+tcp://localhost:5980/icebreaker@1.0.0', { keys:bob, authenticate: authenticate })
 
   _(l, on({
     ready: function (e) {
@@ -78,7 +78,7 @@ test('shs+tcp v4', function (t) {
 test('shs+tcp v6', function (t) {
   t.plan(5)
 
-  var l = listen('shs+tcp://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@[::1]:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+tcp://[::1]:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
 
   _(l, on({
     ready: function (e) {
@@ -92,7 +92,7 @@ test('shs+tcp v6', function (t) {
 test('shs+tcp+unix', function (t) {
   t.plan(5)
 
-  var l = listen('shs+tcp+unix://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@'+ os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+tcp+unix://'+os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
 
   _(l, on({
     ready: function (e) {
@@ -108,7 +108,7 @@ if (utp != null)
   test('shs+utp', function (t) {
     t.plan(5)
 
-    var l = listen('shs+utp://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@localhost:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+    var l = listen('shs+utp://localhost:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
 
     _(l, on({
       ready: function (e) {
@@ -123,7 +123,7 @@ if (utp != null)
 test('shs+ws v4', function (t) {
   t.plan(5)
 
-  var l = listen('shs+ws://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@localhost:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+ws://localhost:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
 
   _(l, on({
     ready: function (e) {
@@ -138,7 +138,7 @@ test('shs+ws v4', function (t) {
 test('shs+ws v6', function (t) {
   t.plan(5)
 
-  var l = listen('shs+ws://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@[::1]:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+ws://[::1]:5980/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
 
   _(l, on({
     ready: function (e) {
@@ -153,7 +153,7 @@ test('shs+ws v6', function (t) {
 test('shs+ws+unix', function (t) {
   t.plan(5)
 
-  var l = listen('shs+ws+unix://' + encodeURIComponent(bob.publicKey.toString('base64')) + '@'+ os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+ws+unix://'+ os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
   
   _(l, on({
     ready: function (e) {
