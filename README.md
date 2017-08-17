@@ -142,13 +142,18 @@ _(
 ## network.connect(url,[params],callback)
 This connects to a specified url address.
 * Url to connect.
-* Parameters for the selected protocol is optional.
+* Parameters for the selected protocol is optional, when the selected protocols is not a shs protocol.
 * callback(error,connection) returns error or a connection duplex stream.
-
+* For shs protocols is params.keys.publicKey and  params.keys.secretKey required.
+```javascript
+  var cl = require('chloride')
+  var keys = cl.crypto_sign_keypair()
+```
 ## network.listen(url,params)
 This starts a server in the listening mode on the given url and parameters.
 * Returns a source with events
 * URL is required the format is protocol://host:port
+* Parameters for the selected protocol is optional, when the selected protocols is not a shs protocol.
 
 ### listener.end
 This closes the socket
