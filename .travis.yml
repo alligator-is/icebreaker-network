@@ -10,20 +10,10 @@ env:
     - TRAVIS_NODE_VERSION="8"
     - TRAVIS_NODE_VERSION="8" ENABLE_ZUUL=true
 
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - g++-4.8
-
 before_install:
   - rm -rf ~/.nvm && git clone https://github.com/creationix/nvm.git ~/.nvm && (cd ~/.nvm && git checkout `git describe --abbrev=0 --tags`) && source ~/.nvm/nvm.sh && nvm install $TRAVIS_NODE_VERSION
   - npm install -g node-gyp
-  - if [[ $TRAVIS_OS_NAME == "linux" ]]; then export CXX=g++-4.8; fi
-  - $CXX --version
 install:
   - npm install
-  - npm dedupe
 script:
   - npm test
