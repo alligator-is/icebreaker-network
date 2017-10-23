@@ -489,7 +489,7 @@ arguments[4][9][0].apply(exports,arguments)
 /*!
  * The buffer module from node.js, for the browser.
  *
- * @author   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
+ * @author   Feross Aboukhadijeh <https://feross.org>
  * @license  MIT
  */
 /* eslint-disable no-proto */
@@ -5642,7 +5642,6 @@ module.exports = function(socket, opts) {
 
 }).call(this,require('_process'))
 },{"./ready":68,"_process":26}],70:[function(require,module,exports){
-(function (Buffer){
 /**
   ### `source(socket)`
 
@@ -5651,6 +5650,15 @@ module.exports = function(socket, opts) {
   <<< examples/read.js
 
 **/
+var Buffer = require('safe-buffer').Buffer;
+
+// copied from github.com/feross/buffer
+// Some ArrayBuffers are not passing the instanceof check, so we need to do a bit more work :(
+function isArrayBuffer (obj) {
+  return obj instanceof ArrayBuffer ||
+    (obj != null && obj.constructor != null && obj.constructor.name === 'ArrayBuffer' &&
+      typeof obj.byteLength === 'number')
+}
 
 module.exports = function(socket, cb) {
   var buffer = [];
@@ -5659,9 +5667,8 @@ module.exports = function(socket, cb) {
   var started = false;
   socket.addEventListener('message', function(evt) {
     var data = evt.data;
-
-    if (data instanceof ArrayBuffer) {
-      data = new Buffer(data);
+    if (isArrayBuffer(data)) {
+      data = Buffer.from(data);
     }
 
     if (receiver) {
@@ -5722,8 +5729,7 @@ module.exports = function(socket, cb) {
   return read;
 };
 
-}).call(this,require("buffer").Buffer)
-},{"buffer":11}],71:[function(require,module,exports){
+},{"safe-buffer":78}],71:[function(require,module,exports){
 
 module.exports = 'undefined' === typeof WebSocket ? require('ws') : WebSocket
 

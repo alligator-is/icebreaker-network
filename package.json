@@ -1,6 +1,6 @@
 {
   "name": "icebreaker-network",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
@@ -46,7 +46,7 @@
     "pull-stream": "^3.6.1",
     "pull-abortable": "^4.1.1",
     "tape": "^4.8.0",
-    "uglifyjs": "^2.4.11",
+    "uglify-js": "^5.8.8",
     "zuul": "^3.11.1"
   }
 }
