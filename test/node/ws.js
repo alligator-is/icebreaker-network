@@ -58,7 +58,7 @@ test('ws v4', function (t) {
 test('ws ipv6', function (t) {
   t.plan(5)
 
-  var l = listen('ws://[::1]:8090')
+  var l = listen('ws://[::1]:8091')
 
   _(l, on({
     ready: function (e) {
