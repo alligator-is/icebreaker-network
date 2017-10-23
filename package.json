@@ -4,6 +4,9 @@
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
+    "install": "prebuild --install",
+    "rebuild": "prebuild --compile",
+    "prebuild": "prebuild --all --strip --verbose",
     "build": "npm run browserify && npm run dist",
     "test": "node scripts/test",
     "test-local": "tape test/*.js test/node/*.js",
@@ -37,7 +40,8 @@
     "lodash.pick": "^4.4.0",
     "pull-defer": "^0.2.2",
     "pull-ws": "^3.3.0",
-    "secret-handshake": "^1.1.11"
+    "secret-handshake": "^1.1.11",
+    "prebuild":"^6.2.2"
   },
   "devDependencies": {
     "browserify": "^14.5.0",
