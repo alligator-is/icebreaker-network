@@ -25,7 +25,7 @@
   "optionalDependencies": {
     "utf-8-validate": "^3.0.3",
     "bufferutil": "^3.0.2",
-    "utp-native": "^1.5.4"
+    "utp-native": "^1.6.0"
   },
   "dependencies": {
     "bs58": "^4.0.1",
@@ -40,7 +40,7 @@
     "secret-handshake": "^1.1.11"
   },
   "devDependencies": {
-    "browserify": "^14.4.0",
+    "browserify": "^14.5.0",
     "pull-goodbye": "^0.0.2",
     "pull-serializer": "^0.3.2",
     "pull-stream": "^3.6.1",
