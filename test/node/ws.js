@@ -62,10 +62,14 @@ test('ws ipv6', function (t) {
 
   _(l, on({
     ready: function (e) {
+      console.log(e)
       connect(e.address , onConnect(l, t))
     },
     connection: onConnection(l, t),
-    end: t.notOk
+    end: function(e){
+      console.log(e)
+      t.notOk(e)
+    }
   }))
 })
 
