@@ -69,10 +69,11 @@ test('ws ipv6', function (t) {
     
   }))
 })
+var path = require('path')
 
 test('ws+unix', function (t) {
   t.plan(5)
-  var l = listen('ws+unix://' + os.tmpdir() + '/test4.socket')
+  var l = listen('ws+unix://' + path.join("/",os.tmpdir(),'/test4.socket'))
   _(l, on({
     ready: function (e) {
         connect(e.address, onConnect(l, t)) 

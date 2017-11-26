@@ -10,6 +10,7 @@ var goodbye = require('pull-goodbye')
 var Abortable = require('pull-abortable')
 var alice = cl.crypto_sign_keypair()
 var bob = cl.crypto_sign_keypair()
+var path = require('path')
 
 function authenticate(id, cb) {
   cb(null, true, id.toString('base64') === alice.publicKey.toString('base64'))
@@ -20,7 +21,7 @@ function onConnection(t, l) {
     var abortable = Abortable()
     var a = _.pair()
     var b = _.pair()
-
+  
     _(a, abortable, _.asyncMap(function (m, cb) {
       t.equal(m.toString(), 'hello')
 
@@ -92,7 +93,7 @@ test('shs+tcp v6', function (t) {
 test('shs+tcp+unix', function (t) {
   t.plan(5)
 
-  var l = listen('shs+tcp+unix://'+os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+tcp+unix://'+path.join("/",os.tmpdir() , '/test4.socket','/icebreaker@1.0.0'), { keys: bob, authenticate: authenticate })
 
   _(l, on({
     ready: function (e) {
@@ -153,7 +154,7 @@ test('shs+ws v6', function (t) {
 test('shs+ws+unix', function (t) {
   t.plan(5)
 
-  var l = listen('shs+ws+unix://'+ os.tmpdir() + '/test4.socket'+'/icebreaker@1.0.0', { keys: bob, authenticate: authenticate })
+  var l = listen('shs+ws+unix://'+ path.join("/",os.tmpdir() , '/test4.socket','/icebreaker@1.0.0'), { keys: bob, authenticate: authenticate })
   
   _(l, on({
     ready: function (e) {
