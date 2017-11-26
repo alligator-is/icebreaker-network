@@ -76,15 +76,9 @@ module.exports = function connect(s, params, cb) {
       }, params), function (err, connection) {
 
         if (err) return cb(err)
-
-        cb(null, {
-          type: 'connection',
-          source: connection.source,
-          sink: connection.sink,
-          auth: connection.auth,
-          protocol:url.protocol,
-          address: s
-        })
+        connection.protocol=url.protocol
+        connection.address = s
+        cb(null, connection)
       })
   }
 
@@ -265,10 +259,11 @@ module.exports = function (params, cb) {
   var c = connect(url.format(address), function (err) {
     if (err) return cb(err)
     c.type = 'connection'
+    delete c.remoteAddress
     if (cb) {
       cb(null, c)
       cb = null
-    }
+    } 
   })
   
 }
