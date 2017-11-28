@@ -8,14 +8,14 @@ var on = network.on
 var os = require('os')
 var goodbye = require('pull-goodbye')
 var path = require("path")
-var n = combine(listen('tcp://localhost:8090'),listen('udp://0.0.0.0:8090',{reuseAddr:true,loopback:true,multicast:'239.5.5.5'}),listen('tcp+unix://'+path.join("/",os.tmpdir(),'/test4.socket')))
+var n = combine(listen('tcp://localhost:8099'),listen('udp://0.0.0.0:8099',{reuseAddr:true,loopback:true,multicast:'239.5.5.5'}),listen('tcp+unix://'+path.join("/",os.tmpdir(),'/test4.socket')))
 
 test('combine',function(t){
   t.plan(10)
   _(n, on({
     ready: function (e) {
-      var index=e.address.indexOf('tcp://127.0.0.1:8090')
-      t.ok(e.address.indexOf('udp://0.0.0.0:8090')!==-1)
+      var index=e.address.indexOf('tcp://127.0.0.1:8099')
+      t.ok(e.address.indexOf('udp://0.0.0.0:8099')!==-1)
       t.ok(index!==-1)
  
       t.equals(e.address.length,3)
