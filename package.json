@@ -23,30 +23,30 @@
     "url": "https://github.com/alligator-io/icebreaker-network.git"
   },
   "optionalDependencies": {
-    "utf-8-validate": "^4.0.0",
-    "bufferutil": "^3.0.3",
-    "utp-native": "^1.7.0"
+    "utf-8-validate": "^5.0.1",
+    "bufferutil": "^4.0.0",
+    "utp-native": "^2.0.1"
   },
   "dependencies": {
     "bs58": "^4.0.1",
-    "chloride": "^2.2.8",
+    "chloride": "^2.2.10",
     "datagram-stream": "^1.1.1",
-    "icebreaker": "^2.0.2",
+    "icebreaker": "^2.0.3",
     "ip-address": "^5.8.9",
     "lodash.defaults": "^4.2.0",
     "lodash.pick": "^4.4.0",
-    "pull-defer": "^0.2.2",
-    "pull-ws": "^3.3.0",
-    "secret-handshake": "^1.1.12"
+    "pull-defer": "^0.2.3",
+    "pull-ws": "^3.3.1",
+    "secret-handshake": "^1.1.14"
   },
   "devDependencies": {
-    "browserify": "^16.1.0",
+    "browserify": "^16.2.3",
     "pull-goodbye": "^0.0.2",
     "pull-serializer": "^0.3.2",
-    "pull-stream": "^3.6.2",
+    "pull-stream": "^3.6.9",
     "pull-abortable": "^4.1.1",
-    "tape": "^4.9.0",
-    "uglify-js": "^3.3.12",
-    "zuul": "^3.11.1"
+    "tape": "^4.9.1",
+    "uglify-js": "^3.4.9",
+    "zuul": "^3.12.0"
   }
 }
