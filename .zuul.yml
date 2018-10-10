@@ -3,15 +3,12 @@ capabilities:
   record-video: false
   record-screenshots: false
 browsers:
-  - name: android
-    version: [4.4,5.0]
-    platform: Linux
   - name: firefox
-    version: [37,38]
-    platform: Windows 2012 R2
+    version: [61,62]
+    platform: Windows 10
   - name: chrome
-    version: [42,43]
-    platform: Windows 2012 R2
+    version: [68,69]
+    platform: Windows 10
   - name: ie
     version: 11
     platform: Windows 10
@@ -19,9 +16,9 @@ browsers:
     platform: Windows 10
     version: latest
   - name: safari
-    version: 7..latest
+    version: latest
 scripts:
-  - "https://rawgit.com/alligator-io/icebreaker/master/dist/icebreaker.min.js"
+  - "https://cdn.jsdelivr.net/gh/alligator-io/icebreaker@51f4219bcbb54544ecc0f39b649b9666590cb5d4/dist/icebreaker.min.js"
 browserify:
   - exclude: icebreaker
   - ignore: ws

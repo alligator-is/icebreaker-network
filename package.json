@@ -1,6 +1,6 @@
 {
   "name": "icebreaker-network",
-  "version": "0.7.14",
+  "version": "0.7.15",
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
@@ -40,7 +40,7 @@
     "secret-handshake": "^1.1.14"
   },
   "devDependencies": {
-    "browserify": "^16.2.3",
+    "browserify": "^16.1.0",
     "pull-goodbye": "^0.0.2",
     "pull-serializer": "^0.3.2",
     "pull-stream": "^3.6.9",
