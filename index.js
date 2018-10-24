@@ -95,5 +95,6 @@ module.exports = {
   combine: require('./lib/combine'),
   on: require('./lib/on'),
   map: require('./lib/map'),
-  asyncMap: require('./lib/asyncMap')
+  asyncMap: require('./lib/asyncMap'),
+  paraMap: require('./lib/paraMap')
 }
