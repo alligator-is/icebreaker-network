@@ -13,7 +13,7 @@ var bob = cl.crypto_sign_keypair()
 var path = require('path')
 
 function authenticate(id, cb) {
-  cb(null, true, id.toString('base64') === alice.publicKey.toString('base64'))
+  cb(null, id.toString('base64') === alice.publicKey.toString('base64'))
 }
 
 function onConnection(t, l) {
@@ -24,7 +24,7 @@ function onConnection(t, l) {
   
     _(a, abortable, _.asyncMap(function (m, cb) {
       t.equal(m.toString(), 'hello')
-
+      
       cb(null, 'world');
       setTimeout(function () {
         abortable.abort(true);
