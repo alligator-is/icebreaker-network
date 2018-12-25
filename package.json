@@ -1,6 +1,6 @@
 {
   "name": "icebreaker-network",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
