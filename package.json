@@ -1,6 +1,6 @@
 {
   "name": "icebreaker-network",
-  "version": "0.9.0",
+  "version": "0.1.0",
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
@@ -39,15 +39,15 @@
     "pull-paramap": "^1.2.2",
     "pull-ws": "^3.3.1",
     "secret-handshake": "^1.1.14"
-   },
+  },
   "devDependencies": {
-    "browserify": "^16.1.0",
+    "browserify": "^16.2.3",
+    "pull-abortable": "^4.1.1",
     "pull-goodbye": "^0.0.2",
     "pull-serializer": "^0.3.2",
     "pull-stream": "^3.6.9",
-    "pull-abortable": "^4.1.1",
-    "tape": "^4.9.1",
-    "uglify-js": "^3.4.9",
-    "zuul": "^3.12.0"
+    "tape": "^4.9.2",
+    "zuul": "^3.12.0",
+    "uglify-js": "^3.0.1"
   }
 }
