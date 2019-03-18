@@ -1,11 +1,9 @@
 sudo: false
-language: cpp
+language: node_js
 os:
   - windows
   - linux
   - osx
-install:
-  - npm install
 before_script:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo sh -c 'echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6'; fi
 script:
