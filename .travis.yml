@@ -4,15 +4,6 @@ os:
   - windows
   - linux
   - osx
-env:
-  matrix:
-    - TRAVIS_NODE_VERSION="9"
-    - TRAVIS_NODE_VERSION="10"
-    - TRAVIS_NODE_VERSION="10" ENABLE_ZUUL=true
-
-before_install:
-  - nvm install $TRAVIS_NODE_VERSION
-  - npm install -g node-gyp
 install:
   - npm install
 before_script:
