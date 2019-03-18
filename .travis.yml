@@ -1,9 +1,9 @@
 sudo: false
 language: node_js
 node_js:
-  - "10"
-  - "11"
-
+  - 10
+  - 11
+cache: npm
 os:
   - windows
   - linux
