@@ -5,12 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "npm run browserify && npm run dist",
-    "test": "node scripts/test",
-    "test-local": "tape test/*.js test/node/*.js",
-    "test-zuul": "zuul -- test/browser/connect.js",
-    "test-browser": "zuul --open --local 8087 -- test/browser/connect.js",
-    "browserify": "browserify ./browser.js --ignore ws --ignore os --ignore net --ignore dns --exclude icebreaker  -s network  -o dist/icebreaker-network.js",
-    "dist": "uglifyjs dist/icebreaker-network.js -o dist/icebreaker-network.min.js"
+    "test": "npx tape test/*.js test/node/*.js"  
   },
   "author": "Markus Wunderlin",
   "license": "MIT",
