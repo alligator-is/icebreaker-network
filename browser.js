@@ -1,5 +1,5 @@
 var Connect = require('./lib/connect')
-var isFunction = window.icebreaker||require('icebreaker').isFunction
+var isFunction = window&&window.icebreaker?window.icebreaker:require('icebreaker').isFunction
 
 
 var connect = {}
