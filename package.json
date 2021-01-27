@@ -1,6 +1,6 @@
 {
   "name": "icebreaker-network",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "a network library for pull-streams",
   "main": "index.js",
   "scripts": {
@@ -27,6 +27,7 @@
     "datagram-stream": "^1.1.1",
     "icebreaker": "^2.0.5",
     "ip-address": "^7.1.0",
+    "is-browser": "^2.1.0",
     "lodash.defaults": "^4.2.0",
     "lodash.pick": "^4.4.0",
     "pull-defer": "^0.2.3",
